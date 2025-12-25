@@ -2,7 +2,8 @@
   "ignore_dockerfile": true,
   "root": "backend",
   "build": {
-    "installCommand": "npm install"
+    "installCommand": "cd ../frontend && npm install && cd ../backend && npm install",
+    "buildCommand": "cd ../frontend && npm run build"
   },
   "start": "npm start"
 }

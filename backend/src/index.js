@@ -395,6 +395,30 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', port: PORT });
 });
 
+// 提供静态文件服务（前端构建产物）- 必须在所有 API 路由之后
+const frontendDistPath = path.join(__dirname, '../../frontend/dist');
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
+  
+  // 所有非 API 路由都返回前端应用
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  });
+} else {
+  // 如果没有前端构建产物，提供一个简单的首页
+  app.get('/', (req, res) => {
+    res.json({ 
+      message: '教案评审系统后端 API',
+      version: '1.0.0',
+      endpoints: {
+        health: '/api/health',
+        upload: '/api/upload',
+        templates: '/api/templates'
+      }
+    });
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`后端服务运行在 http://localhost:${PORT}`);
 });
