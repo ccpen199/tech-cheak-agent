@@ -233,6 +233,56 @@ git log --oneline
 git remote show origin
 ```
 
+### Q6: 推送时提示 "Failure when receiving data from the peer"
+
+**原因**：网络连接问题，可能是：
+- 网络不稳定或中断
+- 防火墙或代理设置问题
+- GitHub 服务器临时问题
+- 大文件传输超时
+
+**解决方案**：
+
+1. **检查网络连接**：
+   ```bash
+   # 测试 GitHub 连接
+   ping github.com
+   ```
+
+2. **重试推送**（通常网络问题是暂时的）：
+   ```bash
+   git push
+   ```
+
+3. **增加缓冲区大小**（如果是大文件问题）：
+   ```bash
+   git config --global http.postBuffer 524288000
+   git push
+   ```
+
+4. **使用 SSH 代替 HTTPS**（更稳定）：
+   ```bash
+   git remote set-url origin git@github.com:ccpen199/tech-cheak-agent.git
+   git push
+   ```
+
+5. **检查是否需要推送**：
+   ```bash
+   git status
+   ```
+   如果显示 "您的分支与上游分支一致"，说明本地和远程已同步，无需推送。
+
+6. **如果使用代理，检查代理设置**：
+   ```bash
+   # 查看当前代理设置
+   git config --global --get http.proxy
+   git config --global --get https.proxy
+   
+   # 如果需要设置代理
+   git config --global http.proxy http://proxy.example.com:8080
+   git config --global https.proxy http://proxy.example.com:8080
+   ```
+
 ## 🔄 日常推送流程
 
 推送完成后，日常的代码更新流程：

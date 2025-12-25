@@ -1,0 +1,12 @@
+{
+  "build": {
+    "rootDirectory": "backend",
+    "installCommand": "npm install",
+    "buildCommand": "",
+    "outputDirectory": ""
+  },
+  "deploy": {
+    "startCommand": "npm start"
+  }
+}
+
