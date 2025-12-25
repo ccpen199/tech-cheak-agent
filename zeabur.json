@@ -1,12 +1,9 @@
 {
   "ignore_dockerfile": true,
+  "root": "backend",
   "build": {
-    "rootDirectory": "backend",
-    "installCommand": "npm install",
-    "buildCommand": ""
+    "installCommand": "npm install"
   },
-  "start": {
-    "command": "npm start"
-  }
+  "start": "npm start"
 }
 
