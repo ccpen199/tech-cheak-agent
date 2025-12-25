@@ -10,8 +10,7 @@
     "start:backend": "cd backend && npm start",
     "start:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && npm run dev",
-    "prebuild": "cd frontend && npm install && npm run build"
+    "dev:frontend": "cd frontend && npm run dev"
   },
   "keywords": [
     "教案",
