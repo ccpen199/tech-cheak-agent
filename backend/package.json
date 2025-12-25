@@ -5,9 +5,9 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "prebuild": "cd ../frontend && npm install && npm run build",
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "prebuild": "if [ -d frontend ]; then cd frontend; elif [ -d ../frontend ]; then cd ../frontend; else echo 'Error: frontend directory not found'; exit 1; fi && npm install && npm run build"
   },
   "keywords": [],
   "author": "",
