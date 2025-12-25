@@ -1,0 +1,20 @@
+{
+  "name": "tech-check-agent",
+  "version": "1.0.0",
+  "description": "教案评审系统",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev"
+  },
+  "keywords": [
+    "教案",
+    "评审",
+    "文档处理",
+    "飞书"
+  ],
+  "author": "",
+  "license": "ISC"
+}
