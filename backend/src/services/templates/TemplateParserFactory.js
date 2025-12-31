@@ -10,6 +10,7 @@ import { SY004TemplateParser } from './SY004TemplateParser.js';
 import { SY005TemplateParser } from './SY005TemplateParser.js';
 
 import mammoth from 'mammoth';
+import path from 'path';
 
 export class TemplateParserFactory {
   /**
@@ -45,19 +46,73 @@ export class TemplateParserFactory {
       const text = textResult.value;
 
       // 按优先级尝试识别（更具体的模板先识别）
+      // 注意：SY002应该在SY005之前检查，因为两者可能有重叠的识别条件
+      // 优先检查文件名关键字
+      const fileName = path.basename(filePath, '.docx');
+      console.log('[TemplateParserFactory] 识别模板，文件名:', fileName);
+      
+      // 优先按文件名识别（最可靠）
+      if (/SY001|节庆活动/.test(fileName)) {
+        console.log('[TemplateParserFactory] 文件名包含SY001或节庆活动关键字，检查SY001模板...');
+        if (SY001TemplateParser.identify(text)) {
+          console.log('[TemplateParserFactory] ✅ 识别为SY001模板');
+          return 'SY001';
+        }
+        console.log('[TemplateParserFactory] SY001识别失败');
+      }
+      if (/SY003|主题活动/.test(fileName)) {
+        console.log('[TemplateParserFactory] 文件名包含SY003或主题活动关键字，检查SY003模板...');
+        if (SY003TemplateParser.identify(text)) {
+          console.log('[TemplateParserFactory] ✅ 识别为SY003模板');
+          return 'SY003';
+        }
+        console.log('[TemplateParserFactory] SY003识别失败');
+      }
+      if (/SY002|体适能/.test(fileName)) {
+        console.log('[TemplateParserFactory] 文件名包含SY002或体适能关键字，检查SY002模板...');
+        if (SY002TemplateParser.identify(text)) {
+          console.log('[TemplateParserFactory] ✅ 识别为SY002模板');
+          return 'SY002';
+        }
+        console.log('[TemplateParserFactory] SY002识别失败');
+      }
+      if (/SY005|食育/.test(fileName)) {
+        console.log('[TemplateParserFactory] 文件名包含SY005或食育关键字，检查SY005模板...');
+        if (SY005TemplateParser.identify(text)) {
+          console.log('[TemplateParserFactory] ✅ 识别为SY005模板');
+          return 'SY005';
+        }
+        console.log('[TemplateParserFactory] SY005识别失败');
+      }
+      if (/SY004|绘本剧/.test(fileName)) {
+        console.log('[TemplateParserFactory] 文件名包含SY004或绘本剧关键字，检查SY004模板...');
+        if (SY004TemplateParser.identify(text)) {
+          console.log('[TemplateParserFactory] ✅ 识别为SY004模板');
+          return 'SY004';
+        }
+        console.log('[TemplateParserFactory] SY004识别失败');
+      }
+      
+      // 如果文件名没有提示，按内容识别（按优先级顺序）
+      console.log('[TemplateParserFactory] 按内容识别模板...');
       if (SY004TemplateParser.identify(text)) {
+        console.log('[TemplateParserFactory] ✅ 识别为SY004模板（按内容）');
         return 'SY004';
       }
-      if (SY005TemplateParser.identify(text)) {
-        return 'SY005';
-      }
-      if (SY002TemplateParser.identify(text)) {
-        return 'SY002';
-      }
       if (SY003TemplateParser.identify(text)) {
+        console.log('[TemplateParserFactory] ✅ 识别为SY003模板（按内容）');
         return 'SY003';
       }
+      if (SY002TemplateParser.identify(text)) {
+        console.log('[TemplateParserFactory] ✅ 识别为SY002模板（按内容）');
+        return 'SY002';
+      }
+      if (SY005TemplateParser.identify(text)) {
+        console.log('[TemplateParserFactory] ✅ 识别为SY005模板（按内容）');
+        return 'SY005';
+      }
       if (SY001TemplateParser.identify(text)) {
+        console.log('[TemplateParserFactory] ✅ 识别为SY001模板（按内容）');
         return 'SY001';
       }
 

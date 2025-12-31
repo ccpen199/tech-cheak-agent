@@ -74,7 +74,8 @@ export class BaseTemplateParser {
     // 即使没有传入这些字段的模式，也要识别它们
     const commonFieldNames = [
       '课程编号', '课程目标', '课程材料', '教学步骤',
-      '环节流程', '活动名称', '节日', '绘本', '食育'
+      '环节流程', '活动名称', '节日', '绘本', '食育',
+      '作者', '课程名称', '物资准备', '注意事项'
     ];
     const commonFieldPatterns = commonFieldNames.map(name => new RegExp('^' + name + '[：:]?'));
 
@@ -84,11 +85,11 @@ export class BaseTemplateParser {
         const line = lines[lineIndex];
         let value = '';
         
-        // 1. 先检查是否是冒号分隔格式：课程编号：值
-        // 注意：在字符串中，\s需要写成\\s
-        const colonMatch = line.match(new RegExp(field.name + '[：:]\\s*(.+)'));
+        // 1. 先检查是否是冒号分隔格式：课程编号：值 或 课程编号：（空值）
+        // 注意：在字符串中，\s需要写成\\s，(.+)改为(.+)?表示值是可选的
+        const colonMatch = line.match(new RegExp(field.name + '[：:]\\s*(.*)'));
         if (colonMatch) {
-          value = colonMatch[1].trim();
+          value = colonMatch[1] ? colonMatch[1].trim() : '';
         } else {
           // 2. 检查是否是表格形式，用制表符分隔
           const parts = line.split(/\t/);
@@ -117,6 +118,9 @@ export class BaseTemplateParser {
                   value = '';
                 }
               }
+            } else {
+              // 没有下一行，值应该为空
+              value = '';
             }
           }
         }

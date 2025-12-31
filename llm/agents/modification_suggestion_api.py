@@ -43,10 +43,12 @@ async def main():
             data = json.loads(input_data)
             text = data.get('text', '')
             template_id = data.get('template_id', None)
+            custom_prompt = data.get('custom_prompt', None)
         except json.JSONDecodeError:
             # 如果不是JSON，直接作为文本处理
             text = input_data
             template_id = None
+            custom_prompt = None
         
         if not text:
             result = {
@@ -60,7 +62,7 @@ async def main():
             return
         
         # 提供修改建议
-        result = await suggest_modifications_for_content(text, template_id)
+        result = await suggest_modifications_for_content(text, template_id, custom_prompt)
         
         # 确保结果是字典格式
         if not isinstance(result, dict):

@@ -1,6 +1,6 @@
 /**
  * SY003-童萌-主题活动通用模板解析器
- * 结构：课程名称、物资准备、注意事项、环节流程（只有操作方法和教师指导语，没有主/助教分工）
+ * 结构：课程编号、作者、课程名称、物资准备、注意事项、环节流程（只有操作方法和教师指导语，没有主/助教分工）
  */
 
 import { BaseTemplateParser } from './BaseTemplateParser.js';
@@ -14,7 +14,7 @@ export class SY003TemplateParser extends BaseTemplateParser {
    * 识别模板
    */
   static identify(text) {
-    return /课程名称|物资准备|注意事项|环节流程/.test(text) && 
+    return /课程名称|物资准备|注意事项|环节流程|课程编号/.test(text) && 
            !/节\s*日|活动名称/.test(text); // 区别于SY001
   }
 
@@ -30,8 +30,10 @@ export class SY003TemplateParser extends BaseTemplateParser {
       lists: []
     };
 
-    // 识别基本信息
+    // 识别基本信息（包括课程编号和作者）
     const basicInfo = this.parseBasicInfo(lines, [
+      { name: '课程编号', pattern: /课程编号/ },
+      { name: '作者', pattern: /作\s*者/ },
       { name: '课程名称', pattern: /课程名称/ },
       { name: '物资准备', pattern: /物资准备/ },
       { name: '注意事项', pattern: /注意事项/ }

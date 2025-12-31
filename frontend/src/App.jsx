@@ -21,6 +21,12 @@ function App() {
   const [formatIssuesExpanded, setFormatIssuesExpanded] = useState(false);
   const [editableStructure, setEditableStructure] = useState(null);
   const [realTimeFormatErrors, setRealTimeFormatErrors] = useState(null);
+  const [refreshingTypo, setRefreshingTypo] = useState(false);
+  const [refreshingEvaluation, setRefreshingEvaluation] = useState(false);
+  const [refreshingSuggestion, setRefreshingSuggestion] = useState(false);
+  const [customEvaluationPrompt, setCustomEvaluationPrompt] = useState('');
+  const [customSuggestionPrompt, setCustomSuggestionPrompt] = useState('');
+  const [downloadUrl, setDownloadUrl] = useState(null); // COS下载链接
 
   // 当前是否为 SY004 模板（绘本剧）
   const isSY004Template =
@@ -334,6 +340,63 @@ function App() {
     setError(null);
 
     try {
+      // 生成文件名：优先从可编辑结构中提取课程编号和活动名称/课程名称
+      // 这是基于用户在前端编辑的内容，而不是原始文档
+      let fileName = '';
+      let courseNumber = '';
+      let courseName = '';
+      
+      // 优先从editableStructure的基本信息中提取（前端编辑的内容）
+      if (editableStructure?.sections) {
+        editableStructure.sections.forEach(section => {
+          if (section.type === 'basic_info' && section.fields) {
+            section.fields.forEach(field => {
+              // 过滤无效值：空字符串、"(空)"、null、undefined
+              const value = field.value ? field.value.trim() : '';
+              const isValidValue = value && value !== '' && value !== '(空)' && value !== '（空）';
+              
+              // 提取课程编号
+              if (field.name === '课程编号' && isValidValue) {
+                courseNumber = value;
+              }
+              // 提取活动名称（SY001、SY003）或课程名称（其他模板）
+              if ((field.name === '活动名称' || field.name === '课程名称') && isValidValue) {
+                courseName = value;
+              }
+              // SY004使用绘本名称
+              if (field.name === '绘本名称' && isValidValue) {
+                courseName = value;
+              }
+            });
+          }
+        });
+      }
+      
+      // 如果从editableStructure中提取不到，再尝试从documentInfo获取（作为备选）
+      if (!courseNumber) {
+        courseNumber = result?.documentInfo?.number || '';
+      }
+      if (!courseName) {
+        courseName = result?.documentInfo?.name || '';
+      }
+      
+      // 根据模板类型生成文件名
+      if (courseNumber && courseName) {
+        // 所有模板都使用"课程编号-名称"格式（使用连字符）
+        fileName = `${courseNumber}-${courseName}.docx`;
+      } else if (courseName) {
+        fileName = `${courseName}.docx`;
+      } else if (courseNumber) {
+        fileName = `${courseNumber}.docx`;
+      }
+      
+      // 如果都没有，使用模板名
+      if (!fileName) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        fileName = `${selectedTemplate.name}-${timestamp}.docx`;
+      }
+      
+      // 请求下载文件（blob格式）
       const response = await axios.post('/api/generate-document', {
         structure: editableStructure,
         templateId: selectedTemplate.id,
@@ -341,25 +404,97 @@ function App() {
         documentInfo: result?.documentInfo,
         originalTemplateFilename: selectedTemplate.filename
       }, {
-        responseType: 'blob',
+        responseType: 'blob', // 请求blob格式用于下载
         timeout: 120000
       });
-
-      // 创建下载链接
+      
+      // 从响应头中读取COS下载链接（axios会将响应头转换为小写）
+      // 注意：响应头中的URL已经过encodeURIComponent编码，需要解码
+      let cosDownloadUrl = null;
+      const downloadUrlHeader = response.headers['x-download-url'] || response.headers['X-Download-Url'];
+      if (downloadUrlHeader) {
+        try {
+          cosDownloadUrl = decodeURIComponent(downloadUrlHeader);
+          console.log('文档已上传到COS，下载链接:', cosDownloadUrl);
+          // 保存下载链接到state
+          setDownloadUrl(cosDownloadUrl);
+        } catch (e) {
+          console.warn('解码下载链接失败，使用原始值:', e.message);
+          cosDownloadUrl = downloadUrlHeader;
+          setDownloadUrl(cosDownloadUrl);
+        }
+      }
+      
+      // 创建下载链接并下载到浏览器
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      
-      // 生成文件名：模板名-时间戳.docx
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      const fileName = `${selectedTemplate.name}-${timestamp}.docx`;
       link.setAttribute('download', fileName);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
       
-      alert('✅ 文档已生成并开始下载！');
+      // 如果有COS下载链接且有飞书记录，立即自动同步到飞书（不等待）
+      if (cosDownloadUrl) {
+        if (result?.larkRecord?.recordId) {
+          console.log('📤 自动同步下载链接到飞书...');
+          // 异步同步，不阻塞下载
+          (async () => {
+            try {
+              // 提取作者
+              let author = '';
+              if (editableStructure?.sections) {
+                editableStructure.sections.forEach(section => {
+                  if (section.type === 'basic_info' && section.fields) {
+                    section.fields.forEach(field => {
+                      if (field.name === '作者' && field.value) {
+                        author = field.value.trim();
+                      }
+                    });
+                  }
+                });
+              }
+              
+              // 准备错别字信息
+              let typoInfo = '';
+              if (result.llmTypoSummary) {
+                typoInfo = result.llmTypoSummary;
+              } else if (result.typoResults && result.typoResults.length > 0) {
+                typoInfo = `发现 ${result.typoResults.length} 个错别字：\n`;
+                result.typoResults.forEach((typo, index) => {
+                  typoInfo += `${index + 1}. "${typo.word}" → "${typo.correct}"\n`;
+                });
+              } else {
+                typoInfo = '未发现错别字';
+              }
+              
+              const syncResponse = await axios.post('/api/sync-review', {
+                recordId: result.larkRecord.recordId,
+                teachingEvaluation: teachingEvaluation.trim(),
+                modificationComments: modificationComments.trim(),
+                typoInfo: typoInfo,
+                docNumber: courseNumber || result?.documentInfo?.number || '',
+                docName: courseName || result?.documentInfo?.name || '',
+                author: author || '',
+                downloadUrl: cosDownloadUrl
+              });
+              console.log('✅ 下载链接已同步到飞书:', syncResponse.data?.message || '成功');
+            } catch (syncErr) {
+              console.error('❌ 同步下载链接到飞书失败:', syncErr.message);
+              console.error('错误详情:', syncErr.response?.data || syncErr);
+              // 不同步失败不影响下载功能，但给出提示
+              setTimeout(() => {
+                alert('⚠️ 下载链接上传到COS成功，但同步到飞书失败，请稍后手动点击"同步到飞书"按钮');
+              }, 1000);
+            }
+          })();
+        } else {
+          console.warn('⚠️ 没有飞书记录ID，无法自动同步下载链接到飞书');
+        }
+      }
+      
+      alert('✅ 文档已生成并开始下载！' + (cosDownloadUrl ? '\n文档已上传到COS，下载链接将自动同步到飞书' : ''));
     } catch (err) {
       setError(err.response?.data?.error || err.message || '生成文档失败，请重试');
       console.error('生成文档错误:', err);
@@ -435,14 +570,323 @@ function App() {
   };
 
 
+  // 从文档结构中提取文本内容
+  const extractTextFromStructure = (structure) => {
+    if (!structure) return '';
+    
+    const lines = [];
+    
+    if (structure.sections) {
+      structure.sections.forEach(section => {
+        if (section.type === 'basic_info' && section.fields) {
+          section.fields.forEach(field => {
+            if (field.value) {
+              lines.push(`${field.name}\t${field.value}`);
+            } else if (field.items) {
+              lines.push(`${field.name}:`);
+              field.items.forEach(item => {
+                lines.push(`${item.number}. ${item.content || ''}`);
+              });
+            }
+          });
+        }
+        
+        if (section.type === 'segments' && section.items) {
+          lines.push('环节流程');
+          section.items.forEach(segment => {
+            lines.push(`环节${segment.number}：${segment.title}\t${segment.time || ''}分钟`);
+            lines.push('操作方法：');
+            if (segment.method?.items) {
+              segment.method.items.forEach(item => {
+                lines.push(`${item.number}. ${item.content || ''}`);
+              });
+            }
+            lines.push('主/助教分工：');
+            lines.push(segment.division?.value || '');
+            lines.push('教师指导语：');
+            if (segment.guidance?.items) {
+              segment.guidance.items.forEach(item => {
+                lines.push(`${item.number}. ${item.content || ''}`);
+              });
+            }
+          });
+        }
+        
+        if (section.type === 'teaching_steps' && section.items) {
+          section.items.forEach(step => {
+            lines.push(`步骤${step.number}：${step.title || ''}`);
+            // SY002和SY005的step有games数组，需要提取games中的内容
+            if (step.games && step.games.length > 0) {
+              step.games.forEach(game => {
+                lines.push(`游戏${game.number}：${game.title || ''}`);
+                // 提取要点
+                if (game.points && game.points.length > 0) {
+                  game.points.forEach(point => {
+                    lines.push(`￮ ${point.content || ''}`);
+                  });
+                }
+                // 提取指导语
+                if (game.guidance) {
+                  lines.push(`指导语：${game.guidance}`);
+                }
+              });
+            } else if (step.content) {
+              // 其他模板可能使用content字段
+              lines.push(step.content);
+            }
+          });
+        }
+        
+        if (section.type === 'process' && section.sections) {
+          section.sections.forEach(subSection => {
+            if (subSection.title) lines.push(subSection.title);
+            if (subSection.items) {
+              subSection.items.forEach(item => {
+                if (item.title) lines.push(item.title);
+                if (item.content) lines.push(item.content);
+              });
+            }
+          });
+        }
+      });
+    }
+    
+    return lines.join('\n');
+  };
+
+  // 刷新错别字检测
+  const handleRefreshTypoCheck = async () => {
+    if (!editableStructure) {
+      setError('没有可用的文档内容');
+      return;
+    }
+
+    setRefreshingTypo(true);
+    setError(null);
+
+    try {
+      // 使用当前网页上编辑后的内容
+      const text = extractTextFromStructure(editableStructure);
+      
+      if (!text || text.trim().length === 0) {
+        setError('文档内容为空，无法进行检测');
+        return;
+      }
+
+      const response = await axios.post('/api/refresh-typo-check', {
+        text: text
+      }, {
+        timeout: 120000
+      });
+
+      if (response.data.success) {
+        console.log('收到错别字检测响应:', response.data);
+        // 更新result中的错别字检测结果
+        setResult(prev => ({
+          ...prev,
+          typoResults: response.data.typoResults || [],
+          llmTypoSummary: response.data.llmTypoSummary || null,
+          llmError: response.data.llmError || null
+        }));
+        alert('✅ 错别字检测已刷新');
+      } else {
+        setError(response.data.error || '刷新失败');
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || '刷新失败，请重试');
+      console.error('刷新错别字检测错误:', err);
+    } finally {
+      setRefreshingTypo(false);
+    }
+  };
+
+  // 刷新教学评价
+  const handleRefreshTeachingEvaluation = async () => {
+    if (!editableStructure) {
+      setError('没有可用的文档内容');
+      return;
+    }
+
+    setRefreshingEvaluation(true);
+    setError(null);
+
+    try {
+      // 使用当前网页上编辑后的内容
+      const text = extractTextFromStructure(editableStructure);
+      const templateId = result?.templateFormatResult?.templateId || 
+                        (selectedTemplate?.id?.match(/SY\d+/)?.[0]) || null;
+      
+      if (!text || text.trim().length === 0) {
+        setError('文档内容为空，无法进行评价');
+        return;
+      }
+      
+      const response = await axios.post('/api/refresh-teaching-evaluation', {
+        text: text,
+        templateId: templateId,
+        customPrompt: customEvaluationPrompt.trim() || null
+      }, {
+        timeout: 120000
+      });
+
+      if (response.data.success) {
+        const evaluation = response.data.teachingEvaluation;
+        let evalText = '';
+        if (evaluation.evaluation) {
+          evalText += `【总体评价】\n${evaluation.evaluation}\n\n`;
+        }
+        if (evaluation.strengths && evaluation.strengths.length > 0) {
+          evalText += `【优点】\n${evaluation.strengths.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n`;
+        }
+        if (evaluation.improvements && evaluation.improvements.length > 0) {
+          evalText += `【改进建议】\n${evaluation.improvements.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n`;
+        }
+        if (evaluation.overall_score) {
+          evalText += `【综合评分】${evaluation.overall_score}/10分`;
+        }
+        setTeachingEvaluation(evalText.trim());
+        alert('✅ 教学评价已刷新');
+      } else {
+        setError(response.data.error || '刷新失败');
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || '刷新失败，请重试');
+      console.error('刷新教学评价错误:', err);
+    } finally {
+      setRefreshingEvaluation(false);
+    }
+  };
+
+  // 刷新修改意见
+  const handleRefreshModificationSuggestion = async () => {
+    if (!editableStructure) {
+      setError('没有可用的文档内容');
+      return;
+    }
+
+    setRefreshingSuggestion(true);
+    setError(null);
+
+    try {
+      // 使用当前网页上编辑后的内容
+      const text = extractTextFromStructure(editableStructure);
+      const templateId = result?.templateFormatResult?.templateId || 
+                        (selectedTemplate?.id?.match(/SY\d+/)?.[0]) || null;
+      
+      if (!text || text.trim().length === 0) {
+        setError('文档内容为空，无法生成建议');
+        return;
+      }
+      
+      const response = await axios.post('/api/refresh-modification-suggestion', {
+        text: text,
+        templateId: templateId,
+        customPrompt: customSuggestionPrompt.trim() || null
+      }, {
+        timeout: 120000
+      });
+
+      if (response.data.success) {
+        const suggestion = response.data.modificationSuggestion;
+        console.log('收到修改建议响应:', suggestion);
+        
+        if (!suggestion) {
+          setError('服务器返回了空结果');
+          return;
+        }
+        
+        let suggestionText = '';
+        if (suggestion.summary) {
+          suggestionText += `【总体建议】\n${suggestion.summary}\n\n`;
+        }
+        if (suggestion.suggestions && suggestion.suggestions.length > 0) {
+          suggestionText += `【具体修改建议】\n`;
+          suggestion.suggestions.forEach((s, i) => {
+            suggestionText += `\n${i + 1}. 【${s.section || '未分类'}】\n`;
+            if (s.issue) {
+              suggestionText += `   问题：${s.issue}\n`;
+            }
+            if (s.suggestion) {
+              suggestionText += `   建议：${s.suggestion}\n`;
+            }
+            if (s.priority) {
+              suggestionText += `   优先级：${s.priority === 'high' ? '高' : s.priority === 'medium' ? '中' : '低'}\n`;
+            }
+          });
+        }
+        
+        const finalText = suggestionText.trim();
+        console.log('格式化后的修改建议文本长度:', finalText.length);
+        
+        if (!finalText) {
+          setError('修改建议结果为空，请检查服务器日志');
+          return;
+        }
+        
+        setModificationComments(finalText);
+        alert('✅ 修改意见已刷新');
+      } else {
+        setError(response.data.error || '刷新失败');
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || '刷新失败，请重试');
+      console.error('刷新修改意见错误:', err);
+    } finally {
+      setRefreshingSuggestion(false);
+    }
+  };
+
   const handleSyncToLark = async () => {
     if (!result?.larkRecord?.recordId) {
       setError('没有可同步的飞书记录，请先上传文档');
       return;
     }
 
-    if (!teachingEvaluation.trim() && !modificationComments.trim()) {
-      setError('请至少填写教学评价或修改意见');
+    // 从可编辑结构中提取课程编号、名称和作者（基于前端编辑的内容）
+    let courseNumber = '';
+    let courseName = '';
+    let author = '';
+    
+    if (editableStructure?.sections) {
+      editableStructure.sections.forEach(section => {
+        if (section.type === 'basic_info' && section.fields) {
+          section.fields.forEach(field => {
+            // 提取课程编号
+            if (field.name === '课程编号' && field.value) {
+              courseNumber = field.value.trim();
+            }
+            // 提取活动名称（SY001、SY003）或课程名称（其他模板）
+            if ((field.name === '活动名称' || field.name === '课程名称') && field.value) {
+              courseName = field.value.trim();
+            }
+            // SY004使用绘本名称
+            if (field.name === '绘本名称' && field.value) {
+              courseName = field.value.trim();
+            }
+            // 提取作者
+            if (field.name === '作者' && field.value) {
+              author = field.value.trim();
+            }
+          });
+        }
+      });
+    }
+
+    // 准备错别字信息
+    let typoInfo = '';
+    if (result.llmTypoSummary) {
+      typoInfo = result.llmTypoSummary;
+    } else if (result.typoResults && result.typoResults.length > 0) {
+      typoInfo = `发现 ${result.typoResults.length} 个错别字：\n`;
+      result.typoResults.forEach((typo, index) => {
+        typoInfo += `${index + 1}. "${typo.word}" → "${typo.correct}"\n`;
+      });
+    } else {
+      typoInfo = '未发现错别字';
+    }
+
+    if (!teachingEvaluation.trim() && !modificationComments.trim() && !typoInfo.trim()) {
+      setError('请至少填写教学评价、修改意见或有错别字信息');
       return;
     }
 
@@ -453,12 +897,18 @@ function App() {
       const response = await axios.post('/api/sync-review', {
         recordId: result.larkRecord.recordId,
         teachingEvaluation: teachingEvaluation.trim(),
-        modificationComments: modificationComments.trim()
+        modificationComments: modificationComments.trim(),
+        typoInfo: typoInfo.trim(),
+        // 同步编号、名称和作者（从前端编辑的内容获取）
+        docNumber: courseNumber || result?.documentInfo?.number || '',
+        docName: courseName || result?.documentInfo?.name || '',
+        author: author || '',
+        downloadUrl: downloadUrl || '' // 传递COS下载链接
       });
 
       if (response.data.success) {
         setError(null);
-        alert('✅ 同步成功！教学评价和修改意见已更新到飞书');
+        alert('✅ 同步成功！教学评价、修改意见和错别字信息已更新到飞书');
       } else {
         setError(response.data.error || '同步失败');
       }
@@ -606,13 +1056,14 @@ function App() {
       <div className="container">
         <header className="header">
           <h1>教案评审系统</h1>
-          <p>选择模板或直接上传Word文档，系统将自动检测错别字、检查格式并登记到飞书</p>
+          <p>选择模板，系统将自动检测错别字、检查格式并登记到飞书</p>
         </header>
 
         {/* 模式选择 */}
         {mode === 'select' && (
           <div className="template-section">
-            <div className="mode-selector">
+            {/* 模式选择器 - 暂时隐藏上传功能 */}
+            {/* <div className="mode-selector">
               <button 
                 className={`mode-button ${mode === 'select' ? 'active' : ''}`}
                 onClick={() => setMode('select')}
@@ -625,7 +1076,7 @@ function App() {
               >
                 直接上传
               </button>
-            </div>
+            </div> */}
 
             {loadingTemplates ? (
               <div className="loading">加载模板列表中...</div>
@@ -675,6 +1126,7 @@ function App() {
         {/* 编辑模式 */}
         {mode === 'edit' && selectedTemplate && result && (
           <div className="edit-section">
+            {/* 模式选择器 - 暂时隐藏上传功能 */}
             <div className="mode-selector">
               <button 
                 className={`mode-button ${mode === 'select' ? 'active' : ''}`}
@@ -687,23 +1139,23 @@ function App() {
               >
                 选择模板
               </button>
-              <button 
+              {/* <button 
                 className={`mode-button ${mode === 'upload' ? 'active' : ''}`}
                 onClick={() => setMode('upload')}
               >
                 直接上传
-              </button>
+              </button> */}
             </div>
 
             <div className="selected-template-info">
               <p>📄 当前模板：<strong>{selectedTemplate.name}</strong></p>
-              <p className="hint">可直接在线编辑，右侧实时显示格式验证结果</p>
+              <p className="hint">可直接在线编辑</p>
             </div>
           </div>
         )}
 
-        {/* 上传模式 */}
-        {mode === 'upload' && (
+        {/* 上传模式 - 已注释，暂时禁用直接上传功能 */}
+        {/* {mode === 'upload' && (
           <div className="upload-section">
             <div className="mode-selector">
               <button 
@@ -760,7 +1212,7 @@ function App() {
               </div>
             )}
           </div>
-        )}
+        )} */}
 
         {(result || (mode === 'edit' && selectedTemplate)) && (
           <div className="result-section">
@@ -1149,26 +1601,46 @@ function App() {
                   <>
             <h2>处理结果</h2>
             
-            <div className="result-card">
+            {/* 文档信息 - 已注释 */}
+            {/* <div className="result-card">
               <h3>文档信息</h3>
               <p><strong>编号：</strong>{result.documentInfo?.number || '未识别'}</p>
               <p><strong>名称：</strong>{result.documentInfo?.name || '未识别'}</p>
-            </div>
+            </div> */}
 
                     {((result.typoResults && result.typoResults.length > 0) || result.llmTypoSummary || result.llmError) && (
               <div className="result-card">
-                <h3>
-                  错别字检测 
-                  {result.typoResults && result.typoResults.length > 0 && (
-                    <span className="badge">({result.typoResults.length} 个)</span>
-                  )}
-                  {result.llmTypoSummary && !result.llmError && (
-                    <span className="llm-badge">🤖 LLM智能检测</span>
-                  )}
-                  {result.llmError && (
-                    <span className="error-badge">⚠️ LLM未启用</span>
-                  )}
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3>
+                    错别字检测 
+                    {result.typoResults && result.typoResults.length > 0 && (
+                      <span className="badge">({result.typoResults.length} 个)</span>
+                    )}
+                    {result.llmTypoSummary && !result.llmError && (
+                      <span className="llm-badge">🤖 LLM智能检测</span>
+                    )}
+                    {result.llmError && (
+                      <span className="error-badge">⚠️ LLM未启用</span>
+                    )}
+                  </h3>
+                  <button
+                    onClick={handleRefreshTypoCheck}
+                    disabled={refreshingTypo || !editableStructure}
+                    style={{
+                      padding: '5px 15px',
+                      fontSize: '14px',
+                      backgroundColor: '#4a90e2',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: refreshingTypo || !editableStructure ? 'not-allowed' : 'pointer',
+                      opacity: refreshingTypo || !editableStructure ? 0.6 : 1
+                    }}
+                    title="重新执行LLM错别字检测"
+                  >
+                    {refreshingTypo ? '刷新中...' : '🔄 刷新'}
+                  </button>
+                </div>
                 {result.llmError ? (
                   <div className="llm-error-notice">
                     <p><strong>⚠️ LLM智能检测未启用</strong></p>
@@ -1219,7 +1691,8 @@ function App() {
                   </>
             )}
 
-            {result && result.formatResults && result.formatResults.length > 0 && (
+            {/* 格式问题显示 - 已隐藏，保留逻辑功能 */}
+            {false && result && result.formatResults && result.formatResults.length > 0 && (
               <div className="result-card">
                 <div className="format-issues-header">
                 <h3>格式问题 ({result.formatResults.length} 个)</h3>
@@ -1274,7 +1747,40 @@ function App() {
                 <h3>教学评价与修改意见</h3>
                 <div className="review-inputs">
                   <div className="input-group">
-                    <label htmlFor="teaching-evaluation">教学评价（同步到飞书第三列）</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label htmlFor="teaching-evaluation">教学评价（同步到飞书第三列）</label>
+                      <button
+                        onClick={handleRefreshTeachingEvaluation}
+                        disabled={refreshingEvaluation || !editableStructure}
+                        style={{
+                          padding: '5px 15px',
+                          fontSize: '14px',
+                          backgroundColor: '#4a90e2',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: refreshingEvaluation || !editableStructure ? 'not-allowed' : 'pointer',
+                          opacity: refreshingEvaluation || !editableStructure ? 0.6 : 1
+                        }}
+                        title="重新执行LLM教学评价"
+                      >
+                        {refreshingEvaluation ? '刷新中...' : '🔄 刷新'}
+                      </button>
+                    </div>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label htmlFor="custom-evaluation-prompt" style={{ fontSize: '13px', color: '#666', display: 'block', marginBottom: '5px' }}>
+                        自定义提示词（可选，留空使用默认提示词）:
+                      </label>
+                      <textarea
+                        id="custom-evaluation-prompt"
+                        className="review-textarea"
+                        rows="2"
+                        placeholder="输入自定义提示词以替代默认提示词..."
+                        value={customEvaluationPrompt}
+                        onChange={(e) => setCustomEvaluationPrompt(e.target.value)}
+                        style={{ fontSize: '12px', fontFamily: 'monospace' }}
+                      />
+                    </div>
                     <textarea
                       id="teaching-evaluation"
                       className="review-textarea"
@@ -1285,7 +1791,40 @@ function App() {
                     />
                   </div>
                   <div className="input-group">
-                    <label htmlFor="modification-comments">修改意见（同步到飞书第四列）</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label htmlFor="modification-comments">修改意见（同步到飞书第四列）</label>
+                      <button
+                        onClick={handleRefreshModificationSuggestion}
+                        disabled={refreshingSuggestion || !editableStructure}
+                        style={{
+                          padding: '5px 15px',
+                          fontSize: '14px',
+                          backgroundColor: '#4a90e2',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: refreshingSuggestion || !editableStructure ? 'not-allowed' : 'pointer',
+                          opacity: refreshingSuggestion || !editableStructure ? 0.6 : 1
+                        }}
+                        title="重新执行LLM修改意见"
+                      >
+                        {refreshingSuggestion ? '刷新中...' : '🔄 刷新'}
+                      </button>
+                    </div>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label htmlFor="custom-suggestion-prompt" style={{ fontSize: '13px', color: '#666', display: 'block', marginBottom: '5px' }}>
+                        自定义提示词（可选，留空使用默认提示词）:
+                      </label>
+                      <textarea
+                        id="custom-suggestion-prompt"
+                        className="review-textarea"
+                        rows="2"
+                        placeholder="输入自定义提示词以替代默认提示词..."
+                        value={customSuggestionPrompt}
+                        onChange={(e) => setCustomSuggestionPrompt(e.target.value)}
+                        style={{ fontSize: '12px', fontFamily: 'monospace' }}
+                      />
+                    </div>
                     <textarea
                       id="modification-comments"
                       className="review-textarea"
@@ -1314,8 +1853,8 @@ function App() {
             )}
               </div>
               
-              {/* 右侧：实时格式错误信息 */}
-              {realTimeFormatErrors && (
+              {/* 右侧：实时格式错误信息 - 已隐藏，保留逻辑功能 */}
+              {false && realTimeFormatErrors && (
                 <div className="format-errors-panel">
                   <h3>格式验证</h3>
                   <div className={`format-status ${realTimeFormatErrors.isValid ? 'valid' : 'invalid'}`}>

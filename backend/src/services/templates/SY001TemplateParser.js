@@ -1,5 +1,6 @@
 /**
  * SY001-童萌-节庆活动方案模板解析器
+ * 结构：课程编号、作者、节日、活动名称、材料、环节流程（每个环节有：操作方法、主/助教分工、教师指导语）
  */
 
 import { BaseTemplateParser } from './BaseTemplateParser.js';
@@ -13,7 +14,7 @@ export class SY001TemplateParser extends BaseTemplateParser {
    * 识别模板
    */
   static identify(text) {
-    return /节\s*日|环节流程|环节\d+/.test(text);
+    return /节\s*日|环节流程|环节\d+|课程编号/.test(text);
   }
 
   /**
@@ -28,8 +29,10 @@ export class SY001TemplateParser extends BaseTemplateParser {
       lists: []
     };
 
-    // 识别基本信息区域
+    // 识别基本信息区域（包括课程编号和作者）
     const basicInfo = this.parseBasicInfo(lines, [
+      { name: '课程编号', pattern: /课程编号/ },
+      { name: '作者', pattern: /作\s*者/ },
       { name: '节日', pattern: /节\s*日/ },
       { name: '活动名称', pattern: /活动名称/ },
       { name: '材料', pattern: /材\s*料/ }

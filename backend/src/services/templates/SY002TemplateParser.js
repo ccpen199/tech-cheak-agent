@@ -17,7 +17,7 @@ export class SY002TemplateParser extends BaseTemplateParser {
    */
   static identify(text) {
     return /体适能|课程编号|课程目标|课程材料|教学步骤/.test(text) && 
-           !/节\s*日|活动名称|绘本|食育/.test(text);
+           !/节\s*日|活动名称|绘本|食育|环节流程|物资准备|注意事项/.test(text);
   }
 
   /**
@@ -33,23 +33,31 @@ export class SY002TemplateParser extends BaseTemplateParser {
     };
 
     // 识别基本信息
-    // 课程编号是普通字段，课程目标和课程材料是编号列表
+    // 课程编号、课程名称、作者是普通字段，课程目标和课程材料是编号列表
     const basicInfo = [];
     
-    // 课程编号
+    // 解析基本信息字段（课程编号、课程名称、作者）
     // 传入所有可能的字段模式，以便正确识别下一行是否是另一个字段
-    const courseNumberField = this.parseBasicInfo(lines, [
+    const basicInfoFields = this.parseBasicInfo(lines, [
       { name: '课程编号', pattern: /课程编号/ },
+      { name: '课程名称', pattern: /课程名称/ },
+      { name: '作者', pattern: /作\s*者/ },
       { name: '课程目标', pattern: /课程目标/ },
       { name: '课程材料', pattern: /课程材料/ },
       { name: '教学步骤', pattern: /教学步骤/ }
     ]);
-    if (courseNumberField && courseNumberField.length > 0) {
-      // 只取课程编号字段
-      const courseNumber = courseNumberField.find(f => f.name === '课程编号');
-      if (courseNumber) {
-        basicInfo.push(courseNumber);
-      }
+    if (basicInfoFields && basicInfoFields.length > 0) {
+      // 添加所有解析到的基本信息字段
+      console.log('[SY002Parser] 解析到的基本信息字段:', basicInfoFields.map(f => f.name).join(', '));
+      basicInfoFields.forEach(field => {
+        if (field.name === '课程编号' || field.name === '课程名称' || field.name === '作者') {
+          console.log(`[SY002Parser] 添加字段: ${field.name} = "${field.value || '(空)'}"`);
+          basicInfo.push(field);
+        }
+      });
+      console.log('[SY002Parser] 最终基本信息字段数:', basicInfo.length);
+    } else {
+      console.log('[SY002Parser] 警告: 未解析到任何基本信息字段！');
     }
     
     // 课程目标（编号列表）
@@ -198,10 +206,18 @@ export class SY002TemplateParser extends BaseTemplateParser {
           }
         }
         
-        // 如果提取的内容包含"指导语:"，则跳过，让它进入指导语匹配逻辑
+        // 如果提取的内容包含"指导语:"，则跳过要点匹配，让它进入指导语匹配逻辑
+        // 但需要处理"￮指导语："这种情况，去掉符号后再匹配
         if (pointContent && /指导语[：:]/.test(pointContent)) {
-          pointContent = null;
-          pointPrefix = null;
+          // 如果要点内容是"指导语："或"指导语：xxx"，需要作为指导语处理
+          const guidanceMatch = pointContent.match(/指导语[：:]\s*(.*)/);
+          if (guidanceMatch && currentGame) {
+            // 提取指导语内容（可能为空）
+            const guidanceContent = guidanceMatch[1] ? guidanceMatch[1].trim() : '';
+            currentGame.guidance = guidanceContent;
+            currentGame.guidanceFound = true;
+          }
+          return; // 跳过要点处理
         }
         
         if (pointContent && currentGame) {
@@ -217,8 +233,13 @@ export class SY002TemplateParser extends BaseTemplateParser {
       // 匹配指导语：指导语：或 ￮指导语：
       if (/指导语[：:]/.test(trimmed)) {
         if (currentGame) {
-          // 指导语内容可能在下一行
-          currentGame.guidance = '';
+          // 提取冒号后面的内容，如果存在则添加到指导语中
+          const guidanceMatch = trimmed.match(/指导语[：:]\s*(.+)/);
+          if (guidanceMatch && guidanceMatch[1].trim()) {
+            currentGame.guidance = guidanceMatch[1].trim();
+          } else {
+            currentGame.guidance = '';
+          }
           currentGame.guidanceFound = true;
         }
         return;

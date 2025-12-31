@@ -37,7 +37,7 @@ class ModificationSuggestionAgent:
         if not self.llm_client.is_configured():
             logger.warning("⚠️  LLM未配置，修改意见将无法使用")
 
-    async def suggest_modifications(self, text: str, template_id: str = None) -> Dict[str, Any]:
+    async def suggest_modifications(self, text: str, template_id: str = None, custom_prompt: str = None) -> Dict[str, Any]:
         """
         对模板内容提供修改建议
 
@@ -72,8 +72,37 @@ class ModificationSuggestionAgent:
         # 根据模板类型确定检查重点
         template_info = self._get_template_info(template_id)
         
-        # 构建提示词
-        system_prompt = """你是一位资深的课程设计专家和编辑，具有丰富的课程优化经验。你的任务是对课程模板进行详细审查，找出可以改进的地方，并提供具体的修改建议。
+        # 如果提供了自定义提示词，使用自定义提示词；否则使用默认提示词
+        if custom_prompt and custom_prompt.strip():
+            # 使用自定义提示词
+            user_prompt = f"""{custom_prompt.strip()}
+
+课程内容：
+{text}
+
+请以JSON格式返回修改建议，格式如下：
+{{
+    "summary": "总体修改建议摘要（100-200字，概括主要问题和改进方向）",
+    "suggestions": [
+        {{
+            "section": "部分名称（如：课程目标、教学步骤1、游戏1等）",
+            "issue": "问题描述（具体指出哪里有问题）",
+            "suggestion": "修改建议（具体说明如何修改，最好提供修改后的示例）",
+            "priority": "优先级（high表示必须修改，medium表示建议修改，low表示可选优化）"
+        }},
+        ...
+    ]
+}}
+
+要求：
+1. 只返回JSON格式，不要添加任何其他文字或解释
+
+现在开始审查："""
+            
+            system_prompt = """你是一位资深的课程设计专家和编辑，具有丰富的课程优化经验。"""
+        else:
+            # 使用默认提示词
+            system_prompt = """你是一位资深的课程设计专家和编辑，具有丰富的课程优化经验。你的任务是对课程模板进行详细审查，找出可以改进的地方，并提供具体的修改建议。
 
 审查重点包括：
 1. 内容完整性：是否有缺失的重要部分
@@ -86,7 +115,7 @@ class ModificationSuggestionAgent:
 
 请提供具体、可操作的修改建议。"""
 
-        user_prompt = f"""请对以下课程模板进行详细审查，找出可以改进的地方，并提供具体的修改建议。
+            user_prompt = f"""请对以下课程模板进行详细审查，找出可以改进的地方，并提供具体的修改建议。
 
 模板类型：{template_info['name']}
 模板说明：{template_info['description']}
@@ -216,19 +245,20 @@ class ModificationSuggestionAgent:
             }
 
 
-async def suggest_modifications_for_content(text: str, template_id: str = None) -> Dict[str, Any]:
+async def suggest_modifications_for_content(text: str, template_id: str = None, custom_prompt: str = None) -> Dict[str, Any]:
     """
     便捷函数：对课程内容提供修改建议
 
     Args:
         text: 课程文本内容
         template_id: 模板ID
+        custom_prompt: 自定义提示词（可选）
 
     Returns:
         修改建议字典
     """
     agent = ModificationSuggestionAgent()
-    return await agent.suggest_modifications(text, template_id)
+    return await agent.suggest_modifications(text, template_id, custom_prompt)
 
 
 if __name__ == "__main__":

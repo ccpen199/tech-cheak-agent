@@ -33,15 +33,31 @@ export class SY005TemplateParser extends BaseTemplateParser {
     };
 
     // 识别基本信息
-    // 课程编号是普通字段，课程目标和课程材料是编号列表
+    // 课程编号、课程名称、作者是普通字段，课程目标和课程材料是编号列表
     const basicInfo = [];
     
-    // 课程编号
-    const courseNumberField = this.parseBasicInfo(lines, [
-      { name: '课程编号', pattern: /课程编号/ }
+    // 解析基本信息字段（课程编号、课程名称、作者）
+    // 传入所有可能的字段模式，以便正确识别下一行是否是另一个字段
+    const basicInfoFields = this.parseBasicInfo(lines, [
+      { name: '课程编号', pattern: /课程编号/ },
+      { name: '课程名称', pattern: /课程名称/ },
+      { name: '作者', pattern: /作\s*者/ },
+      { name: '课程目标', pattern: /课程目标/ },
+      { name: '课程材料', pattern: /课程材料/ },
+      { name: '教学步骤', pattern: /教学步骤/ }
     ]);
-    if (courseNumberField && courseNumberField.length > 0) {
-      basicInfo.push(courseNumberField[0]);
+    if (basicInfoFields && basicInfoFields.length > 0) {
+      // 添加所有解析到的基本信息字段
+      console.log('[SY005Parser] 解析到的基本信息字段:', basicInfoFields.map(f => f.name).join(', '));
+      basicInfoFields.forEach(field => {
+        if (field.name === '课程编号' || field.name === '课程名称' || field.name === '作者') {
+          console.log(`[SY005Parser] 添加字段: ${field.name} = "${field.value || '(空)'}"`);
+          basicInfo.push(field);
+        }
+      });
+      console.log('[SY005Parser] 最终基本信息字段数:', basicInfo.length);
+    } else {
+      console.log('[SY005Parser] 警告: 未解析到任何基本信息字段！');
     }
     
     // 课程目标（编号列表）
@@ -175,11 +191,29 @@ export class SY005TemplateParser extends BaseTemplateParser {
       // 如果是结束整理子项，只处理指导语，不处理要点
       const isEndingItem = currentGame && currentGame.isEndingItem;
       
+      // 先检查是否是符号开头的"指导语："（如"￮指导语："），需要优先处理
       if (!isEndingItem) {
-        // 匹配要点：￮Xxx
+        const symbolPrefixes = ['￮', '•', '·', '-', '—', '○', '●', '▪', '▫', '→'];
+        for (const prefix of symbolPrefixes) {
+          if (trimmed.startsWith(prefix) && /指导语[：:]/.test(trimmed)) {
+            const guidanceMatch = trimmed.match(new RegExp(prefix + '\\s*指导语[：:]\\s*(.*)'));
+            if (guidanceMatch && currentGame) {
+              const guidanceContent = guidanceMatch[1] ? guidanceMatch[1].trim() : '';
+              currentGame.guidance = guidanceContent;
+              currentGame.guidanceFound = true;
+              return; // 处理完成，直接返回
+            }
+            break;
+          }
+        }
+      }
+      
+      if (!isEndingItem) {
+        // 匹配要点：￮Xxx（但排除"指导语："的情况）
         if (trimmed.startsWith('￮') || trimmed.startsWith('•') || trimmed.startsWith('·')) {
           const pointContent = trimmed.substring(1).trim();
-          if (currentGame && pointContent) {
+          // 如果要点内容包含"指导语："，跳过（应该已经被上面的逻辑处理了）
+          if (pointContent && !/指导语[：:]/.test(pointContent) && currentGame) {
             currentGame.points.push({
               content: pointContent,
               editable: true
@@ -192,7 +226,13 @@ export class SY005TemplateParser extends BaseTemplateParser {
       // 匹配指导语：指导语：或 ￮指导语：
       if (/指导语[：:]/.test(trimmed)) {
         if (currentGame) {
-          currentGame.guidance = '';
+          // 提取冒号后面的内容，如果存在则添加到指导语中
+          const guidanceMatch = trimmed.match(/指导语[：:]\s*(.+)/);
+          if (guidanceMatch && guidanceMatch[1].trim()) {
+            currentGame.guidance = guidanceMatch[1].trim();
+          } else {
+            currentGame.guidance = '';
+          }
           currentGame.guidanceFound = true;
         }
         return;

@@ -1,4 +1,4 @@
-python-dotenv>=1.0.0
-loguru>=0.7.0
-litellm>=1.0.0
-
+python-dotenv>=1.0.0      # 环境变量管理
+loguru>=0.7.0             # 日志管理
+litellm>=1.0.0            # LLM API调用
+cos-python-sdk-v5>=1.9.24 # 腾讯云COS SDK

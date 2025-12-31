@@ -20,6 +20,7 @@ import {
 } from 'docx';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import mammoth from 'mammoth';
@@ -45,6 +46,10 @@ export async function generateDocumentFromStructure(structure, templateId, docum
       extractedTemplateId = 'SY002';
     } else if (templateId?.startsWith('SY005')) {
       extractedTemplateId = 'SY005';
+    } else if (templateId?.startsWith('SY003')) {
+      extractedTemplateId = 'SY003';
+    } else if (templateId?.startsWith('SY001')) {
+      extractedTemplateId = 'SY001';
     }
     
     // SY004模板使用独立的生成逻辑（4列表格结构）
@@ -66,8 +71,34 @@ export async function generateDocumentFromStructure(structure, templateId, docum
     const defaultFont = '微软雅黑';
     const defaultSize = 21; // 5号字体 = 10.5pt = 21 half-points
 
-    // 提取模板前的信息（文档编号和作者）
-    if (originalTemplatePath && fs.existsSync(originalTemplatePath)) {
+    // 收集基本信息和环节流程/教学步骤，合并到一个表格中
+    let basicInfoFields = null;
+    let segments = null;
+    let teachingSteps = null; // SY002和SY005使用
+    
+    // 检查基本信息中是否包含"作者"字段，如果包含则不需要从模板头部提取
+    let hasAuthorInBasicInfo = false;
+    
+    if (structure.sections) {
+      structure.sections.forEach(section => {
+        if (section.type === 'basic_info' && section.fields) {
+          basicInfoFields = section.fields;
+          // 检查是否包含作者字段
+          hasAuthorInBasicInfo = section.fields.some(field => field.name === '作者');
+        }
+        if (section.type === 'segments' && section.items) {
+          segments = section.items;
+        }
+        if (section.type === 'teaching_steps' && section.items) {
+          teachingSteps = section.items;
+        }
+      });
+    }
+
+    // 只有当基本信息中不包含"作者"字段时，才从模板头部提取头部信息
+    // 这是因为SY001和SY003等模板已经在基本信息表格中包含了课程编号和作者
+    // 如果基本信息中已经包含了这些字段，就不应该重复添加
+    if (originalTemplatePath && fs.existsSync(originalTemplatePath) && !hasAuthorInBasicInfo) {
       try {
         const headerInfo = await extractHeaderInfo(originalTemplatePath);
         if (headerInfo.documentNumber) {
@@ -102,27 +133,6 @@ export async function generateDocumentFromStructure(structure, templateId, docum
       } catch (error) {
         console.warn('提取模板头部信息失败:', error.message);
       }
-    }
-
-    // 不添加文档名称，因为模板中已经包含了
-
-    // 收集基本信息和环节流程/教学步骤，合并到一个表格中
-    let basicInfoFields = null;
-    let segments = null;
-    let teachingSteps = null; // SY002和SY005使用
-    
-    if (structure.sections) {
-      structure.sections.forEach(section => {
-        if (section.type === 'basic_info' && section.fields) {
-          basicInfoFields = section.fields;
-        }
-        if (section.type === 'segments' && section.items) {
-          segments = section.items;
-        }
-        if (section.type === 'teaching_steps' && section.items) {
-          teachingSteps = section.items;
-        }
-      });
     }
 
     // 如果既有基本信息又有环节流程或教学步骤，合并到一个表格中
@@ -610,7 +620,15 @@ export async function generateDocumentFromStructure(structure, templateId, docum
     // 如果是SY001、SY002、SY003或SY005模板且有原始模板路径，提取"示例图片"后的内容
     if ((extractedTemplateId === 'SY001' || extractedTemplateId === 'SY002' || extractedTemplateId === 'SY003' || extractedTemplateId === 'SY005') && originalTemplatePath && fs.existsSync(originalTemplatePath)) {
       try {
-        const exampleImageContent = await extractExampleImageContent(originalTemplatePath);
+        // SY002和SY005需要应用特殊格式（行距18磅，段前段后0磅）
+        const formatOptions = (extractedTemplateId === 'SY002' || extractedTemplateId === 'SY005') 
+          ? { 
+              lineSpacing: { value: 360, type: 'exact' }, // 18磅固定行距
+              paragraphSpacingAfter: 0,
+              paragraphSpacingBefore: 0
+            }
+          : {};
+        const exampleImageContent = await extractExampleImageContent(originalTemplatePath, formatOptions);
         if (exampleImageContent && exampleImageContent.length > 0) {
           children.push(...exampleImageContent);
         }
@@ -639,17 +657,14 @@ export async function generateDocumentFromStructure(structure, templateId, docum
       }]
     });
 
-    // 保存文档（不覆盖原文件）
-    const processedDir = path.join(__dirname, '../../processed');
-    if (!fs.existsSync(processedDir)) {
-      fs.mkdirSync(processedDir, { recursive: true });
-    }
-
+    // 保存文档到系统临时目录（不使用本地缓存）
+    // 使用系统临时目录，系统会自动清理
+    const tempDir = os.tmpdir();
     const timestamp = Date.now();
     const fileName = documentInfo?.name 
       ? `${documentInfo.name}-${timestamp}.docx`
       : `edited-document-${timestamp}.docx`;
-    const outputPath = path.join(processedDir, fileName);
+    const outputPath = path.join(tempDir, fileName);
 
     const buffer = await Packer.toBuffer(doc);
     fs.writeFileSync(outputPath, buffer);
@@ -836,12 +851,17 @@ async function extractHeaderInfo(templatePath) {
   }
 }
 
-async function extractExampleImageContent(templatePath) {
+async function extractExampleImageContent(templatePath, formatOptions = {}) {
   const content = [];
   
   // 默认字体设置：微软雅黑 5号（10.5pt = 21 half-points）
   const defaultFont = '微软雅黑';
   const defaultSize = 21; // 5号字体 = 10.5pt = 21 half-points
+  
+  // 从格式选项中获取行距和段落间距设置（用于SY002/SY005）
+  const lineSpacing = formatOptions.lineSpacing || null;
+  const paragraphSpacingAfter = formatOptions.paragraphSpacingAfter !== undefined ? formatOptions.paragraphSpacingAfter : 200;
+  const paragraphSpacingBefore = formatOptions.paragraphSpacingBefore !== undefined ? formatOptions.paragraphSpacingBefore : 0;
   
   try {
     // 使用mammoth提取文本，找到"示例图片"的位置
@@ -868,18 +888,23 @@ async function extractExampleImageContent(templatePath) {
       for (let i = 1; i < remainingLines.length; i++) {
         const line = remainingLines[i].trim();
         if (line) {
-          content.push(
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: line,
-                  font: defaultFont,
-                  size: defaultSize
-                })
-              ],
-              spacing: { after: 200 }
-            })
-          );
+          const paragraphOptions = {
+            children: [
+              new TextRun({
+                text: line,
+                font: defaultFont,
+                size: defaultSize
+              })
+            ],
+            spacing: { before: paragraphSpacingBefore, after: paragraphSpacingAfter }
+          };
+          
+          // 如果指定了行距，则应用行距设置（用于SY002/SY005）
+          if (lineSpacing) {
+            paragraphOptions.lineSpacing = lineSpacing;
+          }
+          
+          content.push(new Paragraph(paragraphOptions));
         }
       }
     }
@@ -925,45 +950,12 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
   const defaultFont = '微软雅黑';
   const defaultSize = 21; // 5号字体 = 10.5pt = 21 half-points
   
-  // 提取模板前的信息（文档编号和作者）
-  if (originalTemplatePath && fs.existsSync(originalTemplatePath)) {
-    try {
-      const headerInfo = await extractHeaderInfo(originalTemplatePath);
-      if (headerInfo.documentNumber) {
-        children.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: headerInfo.documentNumber,
-                font: defaultFont,
-                size: defaultSize,
-                bold: true
-              })
-            ],
-            spacing: { after: 200 }
-          })
-        );
-      }
-      if (headerInfo.author) {
-        children.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: headerInfo.author,
-                font: defaultFont,
-                size: defaultSize
-              })
-            ],
-            spacing: { after: 400 }
-          })
-        );
-      }
-    } catch (error) {
-      console.warn('提取模板头部信息失败:', error.message);
-    }
-  }
+  // 格式设置：行距固定值18磅（18 * 20 = 360 twips）
+  const lineSpacing = { value: 360, type: 'exact' }; // 18磅固定行距
+  // 段落间距：段前0磅，段后0磅
+  const paragraphSpacingAfter = 0; // 0磅 = 0 twips
   
-  // 收集基本信息
+  // 收集基本信息（先收集，用于判断是否已有作者字段）
   let basicInfoFields = null;
   let teachingSteps = null;
   
@@ -978,9 +970,55 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
     });
   }
   
+  // 检查基本信息中是否已有作者字段
+  const hasAuthorInBasicInfo = basicInfoFields && basicInfoFields.some(field => field.name === '作者');
+  
+  // 提取模板前的信息（文档编号和作者）
+  // 注意：如果基本信息中已有作者，就不从模板头部添加，避免重复
+  if (originalTemplatePath && fs.existsSync(originalTemplatePath)) {
+    try {
+      const headerInfo = await extractHeaderInfo(originalTemplatePath);
+      if (headerInfo.documentNumber) {
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: headerInfo.documentNumber,
+                font: defaultFont,
+                size: defaultSize,
+                bold: true
+              })
+            ],
+            spacing: { before: 0, after: paragraphSpacingAfter },
+            lineSpacing: lineSpacing
+          })
+        );
+      }
+      // 只有当基本信息中没有作者字段时，才从模板头部添加
+      if (headerInfo.author && !hasAuthorInBasicInfo) {
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: headerInfo.author,
+                font: defaultFont,
+                size: defaultSize
+              })
+            ],
+            spacing: { before: 0, after: paragraphSpacingAfter },
+            lineSpacing: lineSpacing
+          })
+        );
+      }
+    } catch (error) {
+      console.warn('提取模板头部信息失败:', error.message);
+    }
+  }
+  
   // 生成基本信息（段落格式）
   if (basicInfoFields) {
-    basicInfoFields.forEach(field => {
+    let lastFieldName = '';
+    basicInfoFields.forEach((field, fieldIndex) => {
       // 判断是否是编号列表字段（课程目标、课程材料）
       const isNumberedList = field.items && field.items.length > 0;
       
@@ -997,7 +1035,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                 bold: true
               })
             ],
-            spacing: { after: 100 }
+            spacing: { before: 0, after: paragraphSpacingAfter },
+            lineSpacing: lineSpacing
           })
         );
         
@@ -1005,7 +1044,7 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
         if (field._rawValue) {
           // 如果有原始值，按行分割并创建段落
           const lines = field._rawValue.split('\n');
-          lines.forEach(line => {
+          lines.forEach((line, lineIndex) => {
             const trimmed = line.trim();
             if (trimmed) {
               children.push(
@@ -1017,7 +1056,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                       size: defaultSize
                     })
                   ],
-                  spacing: { after: 100 }
+                  spacing: { before: 0, after: paragraphSpacingAfter },
+                  lineSpacing: lineSpacing
                 })
               );
             }
@@ -1025,7 +1065,7 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
         } else if (field.items && field.items.length > 0) {
           // 如果有items数组，为每个item创建段落
           // SY002和SY005统一使用 1. 格式（数字 + 英文句号 + 空格）
-          field.items.forEach(item => {
+          field.items.forEach((item, itemIndex) => {
             const text = item.noNumber 
               ? (item.content || '')
               : `${item.number}. ${item.content || ''}`;
@@ -1039,12 +1079,29 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                       size: defaultSize
                     })
                   ],
-                  spacing: { after: 100 }
+                  spacing: { before: 0, after: paragraphSpacingAfter },
+                  lineSpacing: lineSpacing
                 })
               );
             }
           });
         }
+        
+        // 在"课程目标"和"课程材料"之间添加空行
+        if (field.name === '课程目标') {
+          children.push(
+            new Paragraph({
+              children: [],
+              spacing: { before: 0, after: paragraphSpacingAfter },
+              lineSpacing: lineSpacing
+            })
+          );
+        }
+        
+        // 注意：不在"课程材料"后添加空行，避免与"教学步骤"标题之间出现多余空行
+        // "教学步骤"标题本身会通过段前段后0磅的设置来处理间距
+        
+        lastFieldName = field.name;
       } else {
         // 普通字段（如课程编号）：标题和值在同一行
         const fieldTitle = `${field.name}：`;
@@ -1071,7 +1128,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                 size: defaultSize
               })
             ],
-            spacing: { after: 200 }
+            spacing: { before: 0, after: paragraphSpacingAfter },
+            lineSpacing: lineSpacing
           })
         );
       }
@@ -1091,12 +1149,14 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
             bold: true
           })
         ],
-        spacing: { after: 200 }
+        spacing: { before: 0, after: paragraphSpacingAfter },
+        lineSpacing: lineSpacing
       })
     );
     
     // 处理每个教学步骤
-    teachingSteps.forEach(step => {
+    teachingSteps.forEach((step, stepIndex) => {
+      const isLastStep = stepIndex === teachingSteps.length - 1;
       // 步骤标题：1. 热身+引入
       children.push(
         new Paragraph({
@@ -1108,7 +1168,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
               bold: true
             })
           ],
-          spacing: { after: 100 }
+          spacing: { before: 0, after: paragraphSpacingAfter },
+          lineSpacing: lineSpacing
         })
       );
       
@@ -1130,7 +1191,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                     bold: true
                   })
                 ],
-                spacing: { after: 100 }
+                spacing: { before: 0, after: paragraphSpacingAfter },
+                lineSpacing: lineSpacing
               })
             );
           } else {
@@ -1146,7 +1208,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                       bold: true
                     })
                   ],
-                  spacing: { after: 100 }
+                  spacing: { before: 0, after: paragraphSpacingAfter },
+                  lineSpacing: lineSpacing
                 })
               );
             }
@@ -1154,7 +1217,7 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
           
           // 游戏要点（使用￮标记）
           if (game.points && game.points.length > 0) {
-            game.points.forEach(point => {
+            game.points.forEach((point, pointIndex) => {
               if (point.content) {
                 // 使用解析器返回的前缀，如果没有则默认使用￮
                 const prefix = point.prefix || '￮';
@@ -1167,7 +1230,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                         size: defaultSize
                       })
                     ],
-                    spacing: { after: 100 }
+                    spacing: { before: 0, after: paragraphSpacingAfter },
+                    lineSpacing: lineSpacing
                   })
                 );
               }
@@ -1175,6 +1239,7 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
           }
           
           // 指导语
+          const isLastGame = gameIndex === step.games.length - 1;
           if (game.guidance) {
             children.push(
               new Paragraph({
@@ -1185,7 +1250,8 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                     size: defaultSize
                   })
                 ],
-                spacing: { after: 100 }
+                spacing: { before: 0, after: paragraphSpacingAfter },
+                lineSpacing: lineSpacing
               })
             );
           } else if (isSubItem) {
@@ -1199,26 +1265,25 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
                     size: defaultSize
                   })
                 ],
-                spacing: { after: 100 }
+                spacing: { before: 0, after: paragraphSpacingAfter },
+                lineSpacing: lineSpacing
               })
             );
           }
         });
       }
-      
-      // 步骤之间添加空行
-      children.push(
-        new Paragraph({
-          spacing: { after: 200 }
-        })
-      );
     });
   }
   
-  // 提取"示例图片"后的内容
+  // 提取"示例图片"后的内容（SY002和SY005应用格式设置）
   if (originalTemplatePath && fs.existsSync(originalTemplatePath)) {
     try {
-      const exampleImageContent = await extractExampleImageContent(originalTemplatePath);
+      const formatOptions = {
+        lineSpacing: lineSpacing, // 18磅固定行距
+        paragraphSpacingAfter: paragraphSpacingAfter, // 0磅
+        paragraphSpacingBefore: 0 // 0磅
+      };
+      const exampleImageContent = await extractExampleImageContent(originalTemplatePath, formatOptions);
       if (exampleImageContent && exampleImageContent.length > 0) {
         children.push(...exampleImageContent);
       }
@@ -1247,17 +1312,14 @@ async function generateSY002SY005Document(structure, documentInfo, originalTempl
     }]
   });
   
-  // 保存文档
-  const processedDir = path.join(__dirname, '../../processed');
-  if (!fs.existsSync(processedDir)) {
-    fs.mkdirSync(processedDir, { recursive: true });
-  }
-  
+  // 保存文档到系统临时目录（不使用本地缓存）
+  // 使用系统临时目录，系统会自动清理
+  const tempDir = os.tmpdir();
   const timestamp = Date.now();
   const fileName = documentInfo?.name 
     ? `${documentInfo.name}-${timestamp}.docx`
     : `edited-document-${timestamp}.docx`;
-  const outputPath = path.join(processedDir, fileName);
+  const outputPath = path.join(tempDir, fileName);
   
   const buffer = await Packer.toBuffer(doc);
   fs.writeFileSync(outputPath, buffer);

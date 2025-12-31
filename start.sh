@@ -7,17 +7,44 @@ echo "  教案评审系统启动脚本"
 echo "========================================="
 echo ""
 
-# 检查Node.js是否安装
-if ! command -v node &> /dev/null; then
+# 检查Node.js是否安装（兼容多种方式）
+NODE_CMD=""
+if command -v node &> /dev/null; then
+    NODE_CMD=$(command -v node)
+elif [ -f /usr/bin/node ]; then
+    NODE_CMD="/usr/bin/node"
+elif [ -f /usr/local/bin/node ]; then
+    NODE_CMD="/usr/local/bin/node"
+fi
+
+if [ -z "$NODE_CMD" ]; then
     echo "错误: 未检测到Node.js，请先安装Node.js"
+    echo "尝试的路径: /usr/bin/node, /usr/local/bin/node"
     exit 1
 fi
 
+echo "检测到Node.js: $NODE_CMD"
+NODE_VERSION=$($NODE_CMD --version 2>/dev/null || echo "未知版本")
+echo "Node.js版本: $NODE_VERSION"
+echo ""
+
 # 检查npm是否安装
-if ! command -v npm &> /dev/null; then
+NPM_CMD=""
+if command -v npm &> /dev/null; then
+    NPM_CMD=$(command -v npm)
+elif [ -f /usr/bin/npm ]; then
+    NPM_CMD="/usr/bin/npm"
+elif [ -f /usr/local/bin/npm ]; then
+    NPM_CMD="/usr/local/bin/npm"
+fi
+
+if [ -z "$NPM_CMD" ]; then
     echo "错误: 未检测到npm，请先安装npm"
     exit 1
 fi
+
+echo "检测到npm: $NPM_CMD"
+echo ""
 
 # 获取脚本所在目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -30,14 +57,14 @@ cd backend
 # 检查并安装后端依赖
 if [ ! -d "node_modules" ]; then
     echo "安装后端依赖..."
-    npm install
+    $NPM_CMD install
 fi
 
 # 创建必要的目录
 mkdir -p uploads processed
 
 # 启动后端（后台运行）
-npm start > ../backend.log 2>&1 &
+$NPM_CMD start > ../backend.log 2>&1 &
 BACKEND_PID=$!
 echo "后端服务正在启动 (PID: $BACKEND_PID)"
 echo "后端日志: backend.log"
@@ -67,11 +94,11 @@ cd frontend
 # 检查并安装前端依赖
 if [ ! -d "node_modules" ]; then
     echo "安装前端依赖..."
-    npm install
+    $NPM_CMD install
 fi
 
 # 启动前端（后台运行）
-npm run dev > ../frontend.log 2>&1 &
+$NPM_CMD run dev > ../frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "前端服务已启动 (PID: $FRONTEND_PID)"
 echo "前端日志: frontend.log"

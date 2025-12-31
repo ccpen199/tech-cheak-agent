@@ -166,12 +166,40 @@ export default function SY004BasicInfoEditor({
     (f) =>
       f &&
       f.name &&
-      !['绘本名称', '课时', '教学目标', '教学准备'].includes(f.name)
+      !['课程编号', '作者', '绘本名称', '课时', '教学目标', '教学准备'].includes(f.name)
   );
 
   return (
     <div className="basic-info-editor sy004-basic-info-editor">
-      {/* 第一行：绘本名称 + 课时 */}
+      {/* 第一行：课程编号 */}
+      <div className="basic-info-row">
+        <label className="basic-info-label">课程编号:</label>
+        <div className="basic-info-input-wrapper">
+          <textarea
+            value={getFieldValue('课程编号')}
+            onChange={(e) => updateField('课程编号', e.target.value)}
+            className="review-textarea"
+            rows={2}
+            placeholder="请输入课程编号..."
+          />
+        </div>
+      </div>
+
+      {/* 第二行：作者 */}
+      <div className="basic-info-row">
+        <label className="basic-info-label">作者:</label>
+        <div className="basic-info-input-wrapper">
+          <textarea
+            value={getFieldValue('作者')}
+            onChange={(e) => updateField('作者', e.target.value)}
+            className="review-textarea"
+            rows={2}
+            placeholder="请输入作者..."
+          />
+        </div>
+      </div>
+
+      {/* 第三行：绘本名称 + 课时 */}
       <div className="basic-info-row basic-info-row-sy004-first">
         <div className="basic-info-quarter">
           <label className="basic-info-label">绘本名称:</label>

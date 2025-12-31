@@ -407,7 +407,7 @@ export default function SY002SY005TeachingStepsEditor({
                         });
                       }}
                       rows="6"
-                      placeholder='请输入要点（每行一个，支持：￮、•、1.、-、○ 等符号开头，默认使用￮），最后一行输入"指导语：xxx"作为指导语...'
+                      placeholder='输入指导语1：xxx”，多段指导语则输入“指导语1：xxx、指导语2：xxx...”作为老师的指导语'
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           // Allow normal Enter for new lines

@@ -4,12 +4,8 @@
  */
 
 import { spawn } from 'child_process';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import fs from 'fs';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import appConfig from '../config/appConfig.js';
 
 /**
  * 调用Python智能体检测错别字
@@ -19,38 +15,33 @@ const __dirname = path.dirname(__filename);
 export async function checkTyposWithLLM(text) {
   return new Promise((resolve, reject) => {
     try {
-      // Python脚本路径
-      const pythonScript = path.join(
-        __dirname,
-        '../../../llm/agents/typo_agent.py'
-      );
-
-      // 调用Python脚本（使用API接口方式）
-      const llmDir = path.join(__dirname, '../../../llm');
-      const apiScript = path.join(llmDir, 'agents/typo_check_api.py');
+      // 使用统一配置获取Python脚本路径
+      const apiScript = appConfig.scripts.typoCheck;
+      const llmDir = appConfig.python.llmDir;
       
       // 检查Python脚本是否存在
       if (!fs.existsSync(apiScript)) {
-        console.warn('⚠️  Python智能体脚本不存在，使用传统方法');
+        console.warn(`⚠️  Python智能体脚本不存在: ${apiScript}，使用传统方法`);
         resolve([]);
         return;
       }
       
       // 检查Python是否可用
-      const pythonCheck = spawn('python3', ['--version']);
+      const pythonCommand = appConfig.python.command;
+      const pythonCheck = spawn(pythonCommand, ['--version']);
       pythonCheck.on('error', () => {
-        console.warn('⚠️  Python3 未安装，无法使用LLM智能体，使用传统方法');
+        console.warn(`⚠️  Python未安装或不可用: ${pythonCommand}，使用传统方法`);
         resolve([]);
       });
       pythonCheck.on('close', (code) => {
         if (code !== 0) {
-          console.warn('⚠️  Python3 检查失败，使用传统方法');
+          console.warn('⚠️  Python检查失败，使用传统方法');
           resolve([]);
         }
       });
       
-      // 使用标准输入传递文本
-      const pythonProcess = spawn('python3', [apiScript], {
+      // 使用统一配置的Python命令
+      const pythonProcess = spawn(pythonCommand, [apiScript], {
         cwd: llmDir,
         env: { ...process.env, PYTHONPATH: llmDir }
       });
@@ -95,25 +86,119 @@ export async function checkTyposWithLLM(text) {
 
         try {
           // 合并stdout和stderr（因为LiteLLM可能把错误输出到stdout）
+          // 与教学评价服务保持一致
           let allOutput = stdout + stderr;
           
-          // 使用正则表达式直接匹配JSON对象（更可靠）
-          const jsonMatch = allOutput.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+          // 改进的JSON提取：优先从stdout的第一个{开始提取（JSON通常在stdout开头）
+          let jsonStr = null;
           
-          if (!jsonMatch || jsonMatch.length === 0) {
+          // 方法1：优先从stdout的第一个{开始提取（因为JSON通常在stdout开头）
+          const stdoutFirstBraceIdx = stdout.indexOf('{');
+          if (stdoutFirstBraceIdx !== -1) {
+            let braceCount = 0;
+            let endIdx = stdoutFirstBraceIdx;
+            for (let i = stdoutFirstBraceIdx; i < stdout.length; i++) {
+              if (stdout[i] === '{') braceCount++;
+              if (stdout[i] === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                  endIdx = i;
+                  break;
+                }
+              }
+            }
+            if (endIdx > stdoutFirstBraceIdx) {
+              jsonStr = stdout.substring(stdoutFirstBraceIdx, endIdx + 1);
+            }
+          }
+          
+          // 方法2：如果方法1失败，尝试从合并输出的第一个{开始提取
+          if (!jsonStr) {
+            const startIdx = allOutput.indexOf('{');
+            if (startIdx !== -1) {
+              let braceCount = 0;
+              let endIdx = startIdx;
+              for (let i = startIdx; i < allOutput.length; i++) {
+                if (allOutput[i] === '{') braceCount++;
+                if (allOutput[i] === '}') {
+                  braceCount--;
+                  if (braceCount === 0) {
+                    endIdx = i;
+                    break;
+                  }
+                }
+              }
+              if (endIdx > startIdx) {
+                jsonStr = allOutput.substring(startIdx, endIdx + 1);
+              }
+            }
+          }
+          
+          // 方法3：如果前两个方法都失败，尝试从最后一个{开始提取
+          if (!jsonStr) {
+            const lastBraceIdx = allOutput.lastIndexOf('{');
+            if (lastBraceIdx !== -1) {
+              let braceCount = 0;
+              let endIdx = lastBraceIdx;
+              for (let i = lastBraceIdx; i < allOutput.length; i++) {
+                if (allOutput[i] === '{') braceCount++;
+                if (allOutput[i] === '}') {
+                  braceCount--;
+                  if (braceCount === 0) {
+                    endIdx = i;
+                    break;
+                  }
+                }
+              }
+              if (endIdx > lastBraceIdx) {
+                jsonStr = allOutput.substring(lastBraceIdx, endIdx + 1);
+              }
+            }
+          }
+          
+          // 如果方法1和2都失败，使用正则表达式匹配（匹配最后一个完整的JSON对象）
+          if (!jsonStr) {
+            const jsonMatches = allOutput.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+            if (jsonMatches && jsonMatches.length > 0) {
+              jsonStr = jsonMatches[jsonMatches.length - 1];
+            }
+          }
+          
+          if (!jsonStr) {
             console.warn('⚠️  Python脚本输出中未找到有效的JSON');
-            console.warn('原始输出（最后300字符）:', allOutput.substring(Math.max(0, allOutput.length - 300)));
+            console.warn('原始输出（前200字符）:', allOutput.substring(0, 200));
+            console.warn('原始输出（后500字符）:', allOutput.substring(Math.max(0, allOutput.length - 500)));
             resolve([]);
             return;
           }
           
-          // 取最后一个JSON对象（通常是最新的结果）
-          const jsonStr = jsonMatch[jsonMatch.length - 1];
+          // 清理JSON字符串中的ANSI代码和其他控制字符
+          let cleanedJson = jsonStr
+            .replace(/\x1b\[[0-9;]*m/g, '') // ANSI颜色代码
+            .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '') // 其他ANSI代码
+            .replace(/[\x00-\x1F\x7F]/g, '') // 其他控制字符（但保留换行和制表符用于JSON中的字符串）
+            .trim();
           
-          // 清理JSON字符串中的ANSI代码
-          const cleanedJson = jsonStr.replace(/\x1b\[[0-9;]*m/g, '');
+          // 移除可能包裹JSON的单引号或双引号
+          if ((cleanedJson.startsWith("'") && cleanedJson.endsWith("'")) ||
+              (cleanedJson.startsWith('"') && cleanedJson.endsWith('"'))) {
+            cleanedJson = cleanedJson.slice(1, -1);
+          }
           
-          const result = JSON.parse(cleanedJson);
+          // 如果清理后JSON不完整，尝试修复
+          if (!cleanedJson.endsWith('}')) {
+            cleanedJson += '}';
+          }
+          
+          // 尝试解析JSON
+          let result;
+          try {
+            result = JSON.parse(cleanedJson);
+          } catch (parseError) {
+            console.error('❌ JSON解析失败:', parseError.message);
+            console.error('尝试解析的JSON（前200字符）:', cleanedJson.substring(0, 200));
+            throw parseError;
+          }
           
           // 检查是否有错误
           if (result.error) {

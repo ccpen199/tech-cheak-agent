@@ -37,7 +37,7 @@ class TeachingEvaluationAgent:
         if not self.llm_client.is_configured():
             logger.warning("⚠️  LLM未配置，教学评价将无法使用")
 
-    async def evaluate_teaching(self, text: str, template_id: str = None) -> Dict[str, Any]:
+    async def evaluate_teaching(self, text: str, template_id: str = None, custom_prompt: str = None) -> Dict[str, Any]:
         """
         对模板内容进行教学评价
 
@@ -66,8 +66,39 @@ class TeachingEvaluationAgent:
         # 根据模板类型确定评价重点
         template_info = self._get_template_info(template_id)
         
-        # 构建提示词
-        system_prompt = """你是一位资深的幼儿教育专家，具有丰富的课程设计和教学经验。你的任务是对课程模板进行全面、专业的教学评价。
+        # 如果提供了自定义提示词，使用自定义提示词；否则使用默认提示词
+        if custom_prompt and custom_prompt.strip():
+            # 使用自定义提示词
+            user_prompt = f"""{custom_prompt.strip()}
+
+课程内容：
+{text}
+
+请以JSON格式返回评价结果，格式如下：
+{{
+    "evaluation": "总体评价（200-300字，包括课程的整体质量、设计思路、适用性等）",
+    "strengths": [
+        "优点1（课程设计的亮点）",
+        "优点2",
+        "优点3"
+    ],
+    "improvements": [
+        "改进建议1（可以优化的方面）",
+        "改进建议2",
+        "改进建议3"
+    ],
+    "overall_score": 评分（1-10分，10分为满分）
+}}
+
+要求：
+1. 只返回JSON格式，不要添加任何其他文字或解释
+
+现在开始评价："""
+            
+            system_prompt = """你是一位资深的幼儿教育专家，具有丰富的课程设计和教学经验。"""
+        else:
+            # 使用默认提示词
+            system_prompt = """你是一位资深的幼儿教育专家，具有丰富的课程设计和教学经验。你的任务是对课程模板进行全面、专业的教学评价。
 
 评价维度包括：
 1. 课程目标：目标是否明确、具体、可达成
@@ -80,7 +111,7 @@ class TeachingEvaluationAgent:
 
 请从专业角度给出客观、建设性的评价。"""
 
-        user_prompt = f"""请对以下课程模板进行专业的教学评价。
+            user_prompt = f"""请对以下课程模板进行专业的教学评价。
 
 模板类型：{template_info['name']}
 模板说明：{template_info['description']}
@@ -203,19 +234,20 @@ class TeachingEvaluationAgent:
             }
 
 
-async def evaluate_teaching_content(text: str, template_id: str = None) -> Dict[str, Any]:
+async def evaluate_teaching_content(text: str, template_id: str = None, custom_prompt: str = None) -> Dict[str, Any]:
     """
     便捷函数：对课程内容进行教学评价
 
     Args:
         text: 课程文本内容
         template_id: 模板ID
+        custom_prompt: 自定义提示词（可选）
 
     Returns:
         评价结果字典
     """
     agent = TeachingEvaluationAgent()
-    return await agent.evaluate_teaching(text, template_id)
+    return await agent.evaluate_teaching(text, template_id, custom_prompt)
 
 
 if __name__ == "__main__":

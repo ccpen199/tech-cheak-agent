@@ -1,6 +1,7 @@
 import mammoth from 'mammoth';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { larkService } from './larkService.js';
 import { typoChecker } from './typoChecker.js';
@@ -56,8 +57,8 @@ export async function processDocument(filePath, originalName) {
       console.error('文档结构解析失败:', parseResult.error);
     }
 
-    // 2. 提取文档编号和名称
-    const docInfo = extractDocumentInfo(text, originalName);
+    // 2. 提取文档编号和名称（优先从文档结构中提取，否则从文件名提取）
+    const docInfo = extractDocumentInfo(text, originalName, documentStructure);
     console.log('提取的文档信息:', docInfo);
 
     // 3. 检测错别字（优先使用LLM智能体）
@@ -228,17 +229,84 @@ export async function processDocument(filePath, originalName) {
       }
     }
 
+    // 7. 格式化教学评价和修改意见（用于飞书同步）
+    let formattedTeachingEvaluation = '';
+    if (teachingEvaluation) {
+      const evaluation = teachingEvaluation;
+      let evalText = '';
+      if (evaluation.evaluation) {
+        evalText += `【总体评价】\n${evaluation.evaluation}\n\n`;
+      }
+      if (evaluation.strengths && evaluation.strengths.length > 0) {
+        evalText += `【优点】\n${evaluation.strengths.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n`;
+      }
+      if (evaluation.improvements && evaluation.improvements.length > 0) {
+        evalText += `【改进建议】\n${evaluation.improvements.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n`;
+      }
+      if (evaluation.overall_score) {
+        evalText += `【综合评分】${evaluation.overall_score}/10分`;
+      }
+      formattedTeachingEvaluation = evalText.trim();
+    }
+
+    let formattedModificationComments = '';
+    if (modificationSuggestion) {
+      const suggestion = modificationSuggestion;
+      let suggestionText = '';
+      if (suggestion.summary) {
+        suggestionText += `【总体建议】\n${suggestion.summary}\n\n`;
+      }
+      if (suggestion.suggestions && suggestion.suggestions.length > 0) {
+        suggestionText += `【具体修改建议】\n`;
+        suggestion.suggestions.forEach((s, i) => {
+          suggestionText += `${i + 1}. ${s}\n`;
+        });
+      }
+      formattedModificationComments = suggestionText.trim();
+    }
+    
+    // 如果没有智能体生成的修改意见，使用传统的评审意见
+    if (!formattedModificationComments) {
+      formattedModificationComments = generateReviewComments(typoResults, formatResults);
+    }
+
+    // 从文档结构中提取作者信息
+    let author = '';
+    if (documentStructure && documentStructure.sections) {
+      console.log('[DocumentProcessor] 正在提取作者信息...');
+      documentStructure.sections.forEach(section => {
+        if (section.type === 'basic_info' && section.fields) {
+          console.log('[DocumentProcessor] 基本信息字段:', section.fields.map(f => `${f.name}="${f.value || '(空)'}"`).join(', '));
+          section.fields.forEach(field => {
+            if (field.name === '作者') {
+              console.log(`[DocumentProcessor] 找到作者字段: "${field.value || '(空)'}"`);
+              if (field.value) {
+                author = field.value.trim();
+                console.log(`[DocumentProcessor] 提取到作者: "${author}"`);
+              }
+            }
+          });
+        }
+      });
+    }
+    console.log(`[DocumentProcessor] 最终提取的作者: "${author || '未提供'}"`);
+
     // 7. 登记到飞书
     const larkResult = await larkService.registerDocument({
       docNumber: docInfo.number,
       docName: docInfo.name,
+      author: author,
       originalName: originalName,
       typoCount: typoResults.length,
       formatIssues: formatResults.length,
-      reviewComments: generateReviewComments(typoResults, formatResults),
+      reviewComments: formattedModificationComments,
+      teachingEvaluation: formattedTeachingEvaluation,
       processedDocPath: processedDocPath,
       llmTypoSummary: llmTypoSummary || formatTypoSummary(typoResults) // LLM检测结果摘要
     });
+
+    // 生成缓存key（用于LLM结果缓存，如果需要的话）
+    const cacheKey = `${docInfo.number}-${docInfo.name}`;
 
     return {
       success: true,
@@ -248,11 +316,15 @@ export async function processDocument(filePath, originalName) {
       formatResults: formatResults,
       templateFormatResult: templateFormatDisplay, // 模板格式验证结果（如果是SY001模板）
       processedDocPath: processedDocPath,
+      originalDocPath: filePath, // 原始文档路径（用于刷新时重新读取）
+      originalText: text, // 原始文档文本（用于刷新LLM分析）
       larkRecord: larkResult,
       llmTypoSummary: llmTypoSummary || (typoResults.length > 0 ? formatTypoSummary(typoResults) : null), // LLM检测结果
       llmError: llmError, // LLM错误信息（如果有）
       teachingEvaluation: teachingEvaluation, // 教学评价结果
       modificationSuggestion: modificationSuggestion, // 修改意见结果
+      llmPending: false, // 现在是同步处理，不需要pending标记
+      llmCacheKey: cacheKey, // 用于后续获取LLM结果的key（如果需要）
       message: '文档处理完成并已登记到飞书'
     };
   } catch (error) {
@@ -263,10 +335,44 @@ export async function processDocument(filePath, originalName) {
 
 /**
  * 提取文档编号和名称
- * 规则：文件名以第一个"-"作为分隔符，前部分作为编号，后部分作为名称
- * 如果文件名不包含"-"，则编号为"-"，名称为整个文件名（去掉扩展名）
+ * 优先从文档结构的基本信息中提取（课程编号、活动名称/课程名称）
+ * 如果提取不到，则从文件名提取（以第一个"-"作为分隔符）
  */
-function extractDocumentInfo(text, filename) {
+function extractDocumentInfo(text, filename, documentStructure = null) {
+  let number = null;
+  let docName = null;
+  
+  // 优先从文档结构的基本信息中提取
+  if (documentStructure && documentStructure.sections) {
+    documentStructure.sections.forEach(section => {
+      if (section.type === 'basic_info' && section.fields) {
+        section.fields.forEach(field => {
+          // 提取课程编号
+          if (field.name === '课程编号' && !number && field.value) {
+            number = field.value.trim();
+          }
+          // 提取活动名称（SY001）或课程名称（其他模板）
+          if ((field.name === '活动名称' || field.name === '课程名称') && !docName && field.value) {
+            docName = field.value.trim();
+          }
+          // SY004使用绘本名称
+          if (field.name === '绘本名称' && !docName && field.value) {
+            docName = field.value.trim();
+          }
+        });
+      }
+    });
+  }
+  
+  // 如果从文档结构中提取到了，直接返回
+  if (number && docName) {
+    return {
+      number: number,
+      name: docName
+    };
+  }
+  
+  // 如果提取不到，从文件名提取（作为备选方案）
   // 处理文件名编码问题
   let decodedFilename = filename;
   try {
@@ -293,18 +399,21 @@ function extractDocumentInfo(text, filename) {
   // 以第一个"-"作为分隔符分割文件名
   const dashIndex = nameWithoutExt.indexOf('-');
   
-  let number;
-  let docName;
+  // 如果从文档结构中没有提取到，使用文件名提取的结果
+  if (!number) {
+    if (dashIndex !== -1 && dashIndex > 0) {
+      number = nameWithoutExt.substring(0, dashIndex).trim();
+    } else {
+      number = '-';
+    }
+  }
   
-  if (dashIndex !== -1 && dashIndex > 0) {
-    // 如果文件名包含"-"，则分割
-    // 前部分作为编号，后部分作为名称
-    number = nameWithoutExt.substring(0, dashIndex).trim();
-    docName = nameWithoutExt.substring(dashIndex + 1).trim();
-  } else {
-    // 如果文件名不包含"-"，编号设为"-"，名称使用整个文件名
-    number = '-';
-    docName = nameWithoutExt;
+  if (!docName) {
+    if (dashIndex !== -1 && dashIndex > 0) {
+      docName = nameWithoutExt.substring(dashIndex + 1).trim();
+    } else {
+      docName = nameWithoutExt;
+    }
   }
 
   return {
@@ -319,12 +428,8 @@ function extractDocumentInfo(text, filename) {
 async function generateProcessedDocument(originalPath, text, typoResults, formatResults, originalName, docInfo) {
   try {
     // 直接复制原文档，保持原有结构和格式
-    const processedDir = path.join(__dirname, '../../processed');
-    
-    // 确保目录存在
-    if (!fs.existsSync(processedDir)) {
-      fs.mkdirSync(processedDir, { recursive: true });
-    }
+    // 使用系统临时目录（不使用本地缓存）
+    const tempDir = os.tmpdir();
     
     // 构建新文件名：确保包含编号
     // 格式：编号-名称-时间戳.docx
@@ -345,7 +450,7 @@ async function generateProcessedDocument(originalPath, text, typoResults, format
     const baseName = path.basename(newFileName, ext);
     newFileName = `${baseName}-${timestamp}${ext}`;
     
-    const outputPath = path.join(processedDir, newFileName);
+    const outputPath = path.join(tempDir, newFileName);
     
     // 直接复制原文档
     fs.copyFileSync(originalPath, outputPath);

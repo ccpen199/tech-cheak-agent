@@ -19,6 +19,7 @@ import {
 } from 'docx';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import mammoth from 'mammoth';
@@ -40,11 +41,31 @@ const defaultSize = 21; // 5号字体 = 10.5pt = 21 half-points
 export async function generateSY004Document(structure, documentInfo, originalTemplatePath = null) {
   const children = [];
 
-  // 1. 提取并添加模板前的头部信息
+  // 1. 解析结构（先解析，以便检查是否有课程编号和作者字段）
+  let basicInfoFields = null;
+  let processSection = null;
+
+  if (structure.sections) {
+    structure.sections.forEach(section => {
+      if (section.type === 'basic_info' && section.fields) {
+        basicInfoFields = section.fields;
+      }
+      if (section.type === 'process') {
+        processSection = section;
+      }
+    });
+  }
+
+  // 检查基本信息中是否已有课程编号和作者字段
+  const hasCourseNumber = basicInfoFields?.some(f => f.name === '课程编号' && f.value && f.value.trim());
+  const hasAuthor = basicInfoFields?.some(f => f.name === '作者' && f.value && f.value.trim());
+
+  // 2. 提取并添加模板前的头部信息（仅在基本信息中没有这些字段时添加，避免重复）
   if (originalTemplatePath && fs.existsSync(originalTemplatePath)) {
     try {
       const headerInfo = await extractHeaderInfo(originalTemplatePath);
-      if (headerInfo.documentNumber) {
+      // 只在基本信息中没有课程编号时，才从模板头部提取文档编号
+      if (headerInfo.documentNumber && !hasCourseNumber) {
         children.push(
           new Paragraph({
             children: [
@@ -59,7 +80,8 @@ export async function generateSY004Document(structure, documentInfo, originalTem
           })
         );
       }
-      if (headerInfo.author) {
+      // 只在基本信息中没有作者时，才从模板头部提取作者
+      if (headerInfo.author && !hasAuthor) {
         children.push(
           new Paragraph({
             children: [
@@ -78,25 +100,92 @@ export async function generateSY004Document(structure, documentInfo, originalTem
     }
   }
 
-  // 2. 解析结构
-  let basicInfoFields = null;
-  let processSection = null;
-
-  if (structure.sections) {
-    structure.sections.forEach(section => {
-      if (section.type === 'basic_info' && section.fields) {
-        basicInfoFields = section.fields;
-      }
-      if (section.type === 'process') {
-        processSection = section;
-      }
-    });
-  }
-
   // 3. 构建4列表格（1545, 4320, 1200, 1215 DXA）
   const allRows = [];
 
-  // 3.1 基本信息行（无论是否有值都输出，保持行结构）
+  // 3.1 课程编号和作者行（如果有值）
+  const courseNumberField = basicInfoFields?.find(f => f.name === '课程编号');
+  const authorField = basicInfoFields?.find(f => f.name === '作者');
+  
+  // 如果basicInfoFields中有课程编号和作者，添加到表格第一行
+  if (courseNumberField || authorField) {
+    allRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: '课程编号',
+                    font: defaultFont,
+                    size: defaultSize,
+                    bold: true
+                  })
+                ],
+                alignment: AlignmentType.CENTER
+              })
+            ],
+            width: { size: 1545, type: WidthType.DXA },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 60, bottom: 30, left: 120, right: 120 }
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: courseNumberField?.value || '',
+                    font: defaultFont,
+                    size: defaultSize
+                  })
+                ],
+                alignment: AlignmentType.LEFT
+              })
+            ],
+            width: { size: 4320, type: WidthType.DXA },
+            margins: { top: 60, bottom: 30, left: 120, right: 120 }
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: '作者',
+                    font: defaultFont,
+                    size: defaultSize,
+                    bold: true
+                  })
+                ],
+                alignment: AlignmentType.CENTER
+              })
+            ],
+            width: { size: 1200, type: WidthType.DXA },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 60, bottom: 30, left: 120, right: 120 }
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: authorField?.value || '',
+                    font: defaultFont,
+                    size: defaultSize
+                  })
+                ],
+                alignment: AlignmentType.LEFT
+              })
+            ],
+            width: { size: 1215, type: WidthType.DXA },
+            margins: { top: 60, bottom: 30, left: 120, right: 120 }
+          })
+        ]
+      })
+    );
+  }
+
+  // 3.2 基本信息行（无论是否有值都输出，保持行结构）
   const bookNameField = basicInfoFields?.find(f => f.name === '绘本名称');
   const classHoursField = basicInfoFields?.find(f => f.name === '课时');
   allRows.push(
@@ -826,16 +915,14 @@ export async function generateSY004Document(structure, documentInfo, originalTem
     }]
   });
 
-  const processedDir = path.join(__dirname, '../../processed');
-  if (!fs.existsSync(processedDir)) {
-    fs.mkdirSync(processedDir, { recursive: true });
-  }
-
+  // 保存文档到系统临时目录（不使用本地缓存）
+  // 使用系统临时目录，系统会自动清理
+  const tempDir = os.tmpdir();
   const timestamp = Date.now();
   const fileName = documentInfo?.name
     ? `${documentInfo.name}-${timestamp}.docx`
     : `edited-document-${timestamp}.docx`;
-  const outputPath = path.join(processedDir, fileName);
+  const outputPath = path.join(tempDir, fileName);
 
   const buffer = await Packer.toBuffer(doc);
   fs.writeFileSync(outputPath, buffer);

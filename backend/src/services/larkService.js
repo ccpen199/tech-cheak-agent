@@ -79,10 +79,11 @@ class LarkService {
       }
 
       // 上传处理后的文档到飞书云文档
+      // 已注释掉：避免 400 params error，不再上传文件到飞书云文档
       let fileToken = null;
-      if (documentData.processedDocPath && fs.existsSync(documentData.processedDocPath)) {
-        fileToken = await this.uploadFile(documentData.processedDocPath, token);
-      }
+      // if (documentData.processedDocPath && fs.existsSync(documentData.processedDocPath)) {
+      //   fileToken = await this.uploadFile(documentData.processedDocPath, token);
+      // }
 
       // 格式化错别字信息（优先使用LLM检测结果）
       const typoInfo = documentData.llmTypoSummary || 
@@ -92,6 +93,8 @@ class LarkService {
       
       // 格式化修改意见（包含错别字和格式问题）
       const modificationComments = documentData.reviewComments || '无修改意见';
+      // 获取教学评价（如果提供）
+      const teachingEvaluation = documentData.teachingEvaluation || '';
 
       // 获取当前时间戳（毫秒）
       // 飞书多维表格的时间字段需要毫秒级时间戳
@@ -120,17 +123,25 @@ class LarkService {
         console.warn('中文编码处理警告:', e.message);
       }
       
+      // 获取作者信息
+      const author = documentData.author || '';
+
       // 调试：打印要发送的数据，确保中文正确
       console.log('准备写入飞书的数据:');
       console.log('  教案名称:', docName);
       console.log('  教案编号:', docNumber);
+      console.log('  作者:', author || '未提供');
       console.log('  入库时间戳:', currentTimestamp);
+      console.log('  教学评价:', teachingEvaluation ? '已提供' : '未提供');
+      console.log('  修改意见:', modificationComments ? '已提供' : '未提供');
 
       // 构建字段数据（只包含非空字段，避免类型转换错误）
       const fields = {
         '教案名称': docName || '',
         '教案编号': docNumber || '-',
-        '教案评价': modificationComments || '',
+        '作者': author || '',
+        '下载链接': documentData.downloadUrl || '', // 添加下载链接字段（在作者列下一列）
+        '教案评价': teachingEvaluation || '',
         '修改意见': modificationComments || '',
         '错别字': typoInfo || '',
         '状态': '待审核'
@@ -171,7 +182,17 @@ class LarkService {
     try {
       const fileStream = fs.createReadStream(filePath);
       const form = new FormData();
+      const parentType = process.env.LARK_DRIVE_PARENT_TYPE || 'explorer';
+      const parentNode = process.env.LARK_DRIVE_PARENT_NODE;
+
+      if (!parentNode) {
+        throw new Error('缺少环境变量 LARK_DRIVE_PARENT_NODE（飞书云文档上传目标目录/节点 token），无法上传到飞书');
+      }
+
       form.append('file', fileStream);
+      // 飞书 upload_all 通常要求指定上传目标
+      form.append('parent_type', parentType);
+      form.append('parent_node', parentNode);
       form.append('file_type', 'docx');
       form.append('file_name', path.basename(filePath));
 
@@ -265,9 +286,10 @@ class LarkService {
   }
 
   /**
-   * 同步教学评价和修改意见到飞书
+   * 同步教学评价、修改意见和错别字信息到飞书
+   * 同时更新教案编号、教案名称和作者（基于前端编辑的内容）
    */
-  async syncReview(recordId, teachingEvaluation, modificationComments) {
+  async syncReview(recordId, teachingEvaluation, modificationComments, typoInfo, docNumber, docName, author, downloadUrl = null) {
     try {
       const token = await this.getAccessToken();
       
@@ -286,11 +308,29 @@ class LarkService {
 
       // 构建要更新的字段
       const fields = {};
+      
+      // 更新教案编号、名称和作者（基于前端编辑的内容）
+      if (docNumber !== undefined && docNumber !== null && docNumber !== '') {
+        fields['教案编号'] = docNumber;
+      }
+      if (docName !== undefined && docName !== null && docName !== '') {
+        fields['教案名称'] = docName;
+      }
+      if (author !== undefined && author !== null && author !== '') {
+        fields['作者'] = author;
+      }
+      if (downloadUrl !== undefined && downloadUrl !== null && downloadUrl !== '') {
+        fields['下载链接'] = downloadUrl;
+      }
+      
       if (teachingEvaluation !== undefined && teachingEvaluation !== null) {
         fields['教案评价'] = teachingEvaluation || '';
       }
       if (modificationComments !== undefined && modificationComments !== null) {
         fields['修改意见'] = modificationComments || '';
+      }
+      if (typoInfo !== undefined && typoInfo !== null) {
+        fields['错别字'] = typoInfo || '';
       }
 
       if (Object.keys(fields).length === 0) {
@@ -302,7 +342,7 @@ class LarkService {
 
       return {
         success: true,
-        message: '教学评价和修改意见已成功同步到飞书'
+        message: '教学评价、修改意见、错别字信息、教案编号、名称、作者和下载链接已成功同步到飞书'
       };
     } catch (error) {
       console.error('同步评价到飞书错误:', error);

@@ -29,11 +29,19 @@ export class SY004TemplateParser extends BaseTemplateParser {
       lists: []
     };
 
-    // 识别基本信息（绘本名称、课时是单行字段）
+    // 识别基本信息（课程编号、作者、绘本名称、课时是单行字段）
     const basicInfo = this.parseBasicInfo(lines, [
+      { name: '课程编号', pattern: /课程编号/ },
+      { name: '作者', pattern: /作\s*者/ },
       { name: '绘本名称', pattern: /绘本名称/ },
-      { name: '课时', pattern: /课时/ }
+      { name: '课时', pattern: /课时/ },
+      { name: '教学目标', pattern: /教学目标/ },
+      { name: '教学准备', pattern: /教学准备/ },
+      { name: '绘本简介', pattern: /绘本简介/ },
+      { name: '教学过程', pattern: /教学过程/ }
     ]);
+    
+    console.log('[SY004Parser] 解析到的基本信息字段:', basicInfo ? basicInfo.map(f => f.name).join(', ') : '无');
     
     // 识别教学目标（带编号列表）
     const teachingObjectives = this.parseNumberedList('教学目标', allLines);
@@ -47,10 +55,29 @@ export class SY004TemplateParser extends BaseTemplateParser {
     // 注意：模版4 绘本简介后面没有"阅读测评"，只有"教学过程"
     // 如果后续需要支持"阅读测评"，可以在这里添加解析
     
-    // 合并所有基本信息
+    // 合并所有基本信息，确保顺序：课程编号、作者、绘本名称、课时、教学目标、教学准备、绘本简介
     const allBasicInfo = [];
     if (basicInfo) {
-      allBasicInfo.push(...basicInfo);
+      // 确保字段顺序正确：课程编号、作者在最前面
+      const courseNumberField = basicInfo.find(f => f.name === '课程编号');
+      const authorField = basicInfo.find(f => f.name === '作者');
+      const bookNameField = basicInfo.find(f => f.name === '绘本名称');
+      const classHourField = basicInfo.find(f => f.name === '课时');
+      
+      if (courseNumberField) {
+        allBasicInfo.push(courseNumberField);
+        console.log('[SY004Parser] 添加字段: 课程编号 = "' + (courseNumberField.value || '(空)') + '"');
+      }
+      if (authorField) {
+        allBasicInfo.push(authorField);
+        console.log('[SY004Parser] 添加字段: 作者 = "' + (authorField.value || '(空)') + '"');
+      }
+      if (bookNameField) {
+        allBasicInfo.push(bookNameField);
+      }
+      if (classHourField) {
+        allBasicInfo.push(classHourField);
+      }
     }
     if (teachingObjectives) {
       allBasicInfo.push(teachingObjectives);
@@ -61,6 +88,8 @@ export class SY004TemplateParser extends BaseTemplateParser {
     if (bookIntroduction) {
       allBasicInfo.push(bookIntroduction);
     }
+    
+    console.log('[SY004Parser] 最终基本信息字段数:', allBasicInfo.length);
     
     if (allBasicInfo.length > 0) {
       structure.sections.push({
