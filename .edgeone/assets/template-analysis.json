@@ -1,0 +1,231 @@
+[
+  {
+    "filename": "SY001-童萌-节庆活动方案模板.docx",
+    "totalLines": 45,
+    "basicInfoFields": [
+      {
+        "line": 3,
+        "text": "节  日"
+      },
+      {
+        "line": 5,
+        "text": "活动名称"
+      },
+      {
+        "line": 7,
+        "text": "材  料"
+      }
+    ],
+    "segments": [
+      {
+        "line": 10,
+        "text": "环节1：学习古诗《元日》"
+      },
+      {
+        "line": 21,
+        "text": "环节2：xxx"
+      },
+      {
+        "line": 29,
+        "text": "环节3：xxx 后面继续添加环节3/4"
+      },
+      {
+        "line": 37,
+        "text": "环节4：xxx 后面继续添加环节3/4"
+      }
+    ],
+    "subFields": [
+      {
+        "line": 12,
+        "text": "操作方法："
+      },
+      {
+        "line": 16,
+        "text": "主/助教分工："
+      },
+      {
+        "line": 18,
+        "text": "教师指导语："
+      },
+      {
+        "line": 23,
+        "text": "操作方法："
+      },
+      {
+        "line": 25,
+        "text": "主/助教分工："
+      },
+      {
+        "line": 27,
+        "text": "教师指导语："
+      },
+      {
+        "line": 31,
+        "text": "操作方法："
+      },
+      {
+        "line": 33,
+        "text": "主/助教分工："
+      },
+      {
+        "line": 35,
+        "text": "教师指导语："
+      },
+      {
+        "line": 39,
+        "text": "操作方法："
+      },
+      {
+        "line": 41,
+        "text": "主/助教分工："
+      },
+      {
+        "line": 43,
+        "text": "教师指导语："
+      }
+    ],
+    "styles": {
+      "fonts": [
+        "<w:rFonts w:asciiTheme=\"minorHAnsi\" w:hAnsiTheme=\"minorHAnsi\" w:eastAsiaTheme=\"minorEastAsia\" w:cstheme=\"minorBidi\"/>"
+      ],
+      "sizes": [
+        "21",
+        "22"
+      ],
+      "tableStyle": "<w:tblStyle w:val=\"2\"/><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblInd w:w=\"0\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:left w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:bottom w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:right w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:insideH w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:insideV w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/></w:tblBorders><w:tb"
+    }
+  },
+  {
+    "filename": "SY002-童萌-体适能课模板.docx",
+    "totalLines": 57,
+    "basicInfoFields": [
+      {
+        "line": 3,
+        "text": "课程材料："
+      }
+    ],
+    "segments": [],
+    "subFields": [],
+    "styles": {
+      "fonts": [
+        "<w:rFonts w:asciiTheme=\"minorHAnsi\" w:hAnsiTheme=\"minorHAnsi\" w:eastAsiaTheme=\"minorEastAsia\" w:cstheme=\"minorBidi\"/>"
+      ],
+      "sizes": [
+        "21",
+        "22"
+      ],
+      "tableStyle": null
+    }
+  },
+  {
+    "filename": "SY003-童萌-主题活动通用模板.docx",
+    "totalLines": 23,
+    "basicInfoFields": [],
+    "segments": [
+      {
+        "line": 7,
+        "text": "环节1："
+      },
+      {
+        "line": 11,
+        "text": "环节2："
+      },
+      {
+        "line": 15,
+        "text": "环节3："
+      },
+      {
+        "line": 19,
+        "text": "环节4："
+      }
+    ],
+    "subFields": [
+      {
+        "line": 5,
+        "text": "注意事项"
+      },
+      {
+        "line": 9,
+        "text": "操作方法："
+      },
+      {
+        "line": 10,
+        "text": "教师指导语："
+      },
+      {
+        "line": 13,
+        "text": "操作方法："
+      },
+      {
+        "line": 14,
+        "text": "教师指导语："
+      },
+      {
+        "line": 17,
+        "text": "操作方法："
+      },
+      {
+        "line": 18,
+        "text": "教师指导语："
+      },
+      {
+        "line": 21,
+        "text": "操作方法："
+      },
+      {
+        "line": 22,
+        "text": "教师指导语："
+      }
+    ],
+    "styles": {
+      "fonts": [
+        "<w:rFonts w:asciiTheme=\"minorHAnsi\" w:hAnsiTheme=\"minorHAnsi\" w:eastAsiaTheme=\"minorEastAsia\" w:cstheme=\"minorBidi\"/>"
+      ],
+      "sizes": [
+        "21",
+        "22"
+      ],
+      "tableStyle": "<w:tblStyle w:val=\"2\"/><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblInd w:w=\"0\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:left w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:bottom w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:right w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:insideH w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:insideV w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/></w:tblBorders><w:tb"
+    }
+  },
+  {
+    "filename": "SY004-童萌-绘本剧模板.docx",
+    "totalLines": 50,
+    "basicInfoFields": [],
+    "segments": [],
+    "subFields": [],
+    "styles": {
+      "fonts": [
+        "<w:rFonts w:asciiTheme=\"minorHAnsi\" w:hAnsiTheme=\"minorHAnsi\" w:eastAsiaTheme=\"minorEastAsia\" w:cstheme=\"minorBidi\"/>",
+        "<w:rFonts w:asciiTheme=\"minorHAnsi\" w:hAnsiTheme=\"minorHAnsi\" w:eastAsiaTheme=\"minorEastAsia\" w:cstheme=\"minorBidi\"/>"
+      ],
+      "sizes": [
+        "21",
+        "22"
+      ],
+      "tableStyle": "<w:tblStyle w:val=\"2\"/><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblInd w:w=\"0\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:left w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:bottom w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:right w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:insideH w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/><w:insideV w:val=\"single\" w:color=\"DEE0E3\" w:sz=\"0\" w:space=\"0\"/></w:tblBorders><w:tb"
+    }
+  },
+  {
+    "filename": "SY005-童萌-食育课模板.docx",
+    "totalLines": 49,
+    "basicInfoFields": [
+      {
+        "line": 6,
+        "text": "课程材料："
+      }
+    ],
+    "segments": [],
+    "subFields": [],
+    "styles": {
+      "fonts": [
+        "<w:rFonts w:asciiTheme=\"minorHAnsi\" w:hAnsiTheme=\"minorHAnsi\" w:eastAsiaTheme=\"minorEastAsia\" w:cstheme=\"minorBidi\"/>"
+      ],
+      "sizes": [
+        "21",
+        "22"
+      ],
+      "tableStyle": null
+    }
+  }
+]

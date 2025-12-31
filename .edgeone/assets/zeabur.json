@@ -1,0 +1,10 @@
+{
+  "ignore_dockerfile": true,
+  "root": ".",
+  "build": {
+    "installCommand": "npm install --prefix frontend && npm install --prefix backend",
+    "buildCommand": "npm run build --prefix frontend"
+  },
+  "start": "npm start --prefix backend"
+}
+
